@@ -6,8 +6,14 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   herramienta `note_loose_end`, y tras cada respuesta larga Haiku
   (`claude-haiku-4-5-20251001`) caza los que se le escaparon y cierra los que
   quedaron resueltos.
-- **Dónde se guardan**: `.claude/loose-ends.json` en la raíz de cada proyecto.
-  Versiónalo con el proyecto: así viaja entre ordenadores y ramas.
+- **Dónde se guardan**: `.claude/loose-ends.json` en la raíz del **repo git al
+  que pertenece cada cabo**, no en el de la sesión que lo encontró. Sin
+  `repo`, la herramienta apunta en el repo de la sesión; con `repo` (ruta
+  absoluta de un fichero o carpeta del otro repo) apunta en ese. El barrido
+  reparte los cabos entre los repos que Claude tocó en el turno. Una sesión
+  solo ve y recuerda los cabos de su propio repo. Fuera de un repo git no se
+  guarda nada de la sesión (nunca en `~/.claude/`). Versiónalo con el repo: así
+  viaja entre ordenadores y ramas.
 - **Banda** encima del prompt: Chispa (animada en la app de escritorio, una
   cara de texto en la terminal) y los contadores `plan · cabos · en cola`.
 - **Panel** (`/pendientes` o el botón «ver»): plan de la sesión, cabos con
@@ -35,7 +41,7 @@ conflicto el mod no escribe y la banda avisa.
 ## Desactivar
 
 `/plugin` → pestaña Installed → loose-ends. Los datos se quedan en
-`.claude/loose-ends.json` de cada proyecto.
+`.claude/loose-ends.json` de cada repo.
 
 ## Desarrollar
 
