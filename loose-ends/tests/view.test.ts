@@ -59,6 +59,42 @@ describe('pane', () => {
     expect(nodes.some(n => n.type === 'Text' && String(n.props.children).includes('hace 12 min'))).toBe(true)
     expect(nodes.some(n => n.type === 'Text' && n.props.children === '✓ abc1234 feat: x')).toBe(true)
   })
+  const texts = (nodes: any[]) => nodes.filter(n => n.type === 'Text').map(n => String(n.props.children))
+  test('a file error shows a banner in the pane', () => {
+    expect(texts(flat(renderPane(fake, { ...base, fileError: 'json' }, actions))).some(t => t.includes('No puedo leer') && t.includes('(json)'))).toBe(true)
+    expect(texts(flat(renderPane(fake, base, actions))).some(t => t.includes('No puedo leer'))).toBe(false)
+  })
+  test('other branches sit behind a toggle', () => {
+    const other = { ...item, id: 'b2', text: 'Otra rama', branch: 'feat/x' }
+    const closed = flat(renderPane(fake, { ...base, others: [other] }, actions))
+    const toggle = closed.find(n => n.props?.key === 'toggle-others')
+    expect(toggle.props.label).toBe('▸ Otras ramas (1)')
+    expect(texts(closed).some(t => t.includes('Otra rama'))).toBe(false)
+    const open = flat(renderPane(fake, { ...base, others: [other], showOthers: true }, actions))
+    expect(open.find(n => n.props?.key === 'toggle-others').props.label).toBe('▾ Otras ramas (1)')
+    expect(texts(open)).toContain('● Otra rama  [feat/x]')
+    expect(flat(renderPane(fake, base, actions)).some(n => n.props?.key === 'toggle-others')).toBe(false)
+  })
+  test('closed today: Haiku label, dismissed strikethrough, reopen key', () => {
+    const swept = { id: 'c1', text: 'Cerrado por barrido', status: 'done', closedBy: 'sweep', closedAt: '2026-10-04T11:00:00.000Z' }
+    const dropped = { id: 'd1', text: 'Descartado', status: 'dismissed', closedBy: 'user', reason: 'no aplica', closedAt: '2026-10-04T11:30:00.000Z' }
+    const nodes = flat(renderPane(fake, { ...base, commits: [], closedToday: [swept, dropped] }, actions))
+    expect(nodes.find(n => n.props?.children === '✓ cabo: Cerrado por barrido (Haiku)')?.props).toMatchObject({ dimColor: false, strikethrough: false })
+    expect(nodes.find(n => n.props?.children === '✓ cabo: Descartado — no aplica')?.props).toMatchObject({ dimColor: true, strikethrough: true })
+    expect(nodes.map(n => n.props?.key)).toEqual(expect.arrayContaining(['reopen-c1', 'reopen-d1']))
+    expect(texts(nodes)).toContain('HECHO HOY  2')
+  })
+  test('empty plan and empty branch say so', () => {
+    const t = texts(flat(renderPane(fake, { ...base, plan: { items: [], done: 0, total: 0 }, loose: [] }, actions)))
+    expect(t).toContain('Sin plan en esta sesión.')
+    expect(t).toContain('Nada colgando en esta rama.')
+    expect(texts(flat(renderPane(fake, base, actions)))).not.toContain('Nada colgando en esta rama.')
+  })
+  test('Hazlo ahora is dimmed only while Claude works', () => {
+    const now_ = (m: any) => flat(renderPane(fake, m, actions)).find(n => n.props?.key === 'now-a1').props
+    expect(now_({ ...base, working: true }).dimColor).toBe(true)
+    expect(now_(base).dimColor).toBe(false)
+  })
   test('discarding shows reason picker and free text', () => {
     const keys = flat(renderPane(fake, { ...base, discarding: 'a1' }, actions)).map(n => n.props?.key)
     expect(keys).toEqual(expect.arrayContaining(['reason-a1', 'reason-text-a1']))
