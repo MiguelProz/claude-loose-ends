@@ -28,7 +28,10 @@ let plan = []
 let mood = initialMood(0)
 let commits = []
 let discarding = null
+// The item whose evidence and secondary actions the pane shows; one at a time.
+let expanded = null
 let showOthers = false
+let showDone = false
 let refreshTimer = null
 
 async function projectRoot($) {
@@ -56,6 +59,7 @@ async function guarded($, what, step) {
 
 function clearDiscard(id) {
   if (discarding === id) discarding = null
+  if (expanded === id) expanded = null
 }
 
 async function nowIso($) {
@@ -119,6 +123,7 @@ async function mutateNow($, fn, root, report) {
   if (serialize(nextItems) !== serialize(fresh)) await $.fs.write(`${target}/${FILE}`, serialize(nextItems))
   items = nextItems
   if (discarding && !active(items).some(i => i.id === discarding)) discarding = null
+  if (expanded && !active(items).some(i => i.id === expanded)) expanded = null
   $.ui.invalidate('ui.render')
   return result
 }
@@ -195,6 +200,7 @@ async function resolveSessionRepo($) {
     items = []
     fileError = null
     discarding = null
+    expanded = null
     $.ui.invalidate('ui.render')
   }
 }
@@ -315,7 +321,9 @@ function paneModel(now) {
     filePath: sessionRepo ? `${sessionRepo}/${FILE}` : FILE,
     noRepo: sessionRepo === null,
     discarding,
+    expanded,
     showOthers,
+    showDone,
     plan: { items: plan, ...planProgress(plan) },
     loose: list.filter(i => !i.branch || i.branch === branch),
     others: list.filter(i => i.branch && i.branch !== branch),
@@ -344,7 +352,9 @@ async function closeAs($, id, status, reason) {
 export function register(on) {
   on('session.start', async ($, e, next) => {
     discarding = null
+    expanded = null
     showOthers = false
+    showDone = false
     sessionStart = (await $.session.usage()).startedAt
     await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA })
     await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: plan, cabos sueltos y hecho', immediate: true })
@@ -458,14 +468,16 @@ export function register(on) {
     const el = $.ui.resolve(e)
     const now = await $.clock.now()
     return renderPane(el, paneModel(now), {
-      doNow: id => { background($, doNow($, id), 'Hazlo ahora') },
+      doNow: id => { background($, doNow($, id), 'Hacer') },
       queue: id => { clearDiscard(id); background($, mutate($, list => queue(list, id)), 'poner en cola') },
       done: id => { background($, closeAs($, id, 'done', undefined), 'cerrar el cabo') },
+      toggleMore: id => { discarding = null; expanded = expanded === id ? null : id; $.ui.invalidate('ui.render') },
       startDiscard: id => { discarding = discarding === id ? null : id; $.ui.invalidate('ui.render') },
       dismiss: (id, reason) => { background($, closeAs($, id, 'dismissed', reason), 'descartar el cabo') },
       setPriority: (id, p) => { background($, mutate($, list => setPriority(list, id, p)), 'cambiar la prioridad') },
       reopen: id => { clearDiscard(id); background($, mutate($, list => reopen(list, id)), 'reabrir el cabo') },
       toggleOthers: () => { showOthers = !showOthers; $.ui.invalidate('ui.render') },
+      toggleDone: () => { showDone = !showDone; $.ui.invalidate('ui.render') },
     })
   })
 }

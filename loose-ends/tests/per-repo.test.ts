@@ -31,7 +31,7 @@ test('a note with repo goes to that repo, not to the session file', async ($, on
   expect(w.writes).toEqual([OTHER])
   expect(w.toasts).toEqual(['Cabo suelto (other): Cabo del otro repo'])
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
-  expect((await band.find({ type: 'Text', text: /cabo/ }))?.text).toBe('⚠ 1 cabo')
+  expect((await band.find({ type: 'Text', text: /pendiente/ }))?.text).toBe('1 pendiente')
   await band.unmount()
 })
 
@@ -245,7 +245,7 @@ test('outside git the pane says so in place of the lists', async ($, on) => {
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
   expect(await ui.find({ type: 'Text', text: 'Esta sesión no está dentro de un repo git.' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /CABOS SUELTOS/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Pendientes/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -254,7 +254,7 @@ test('in a repo the pane keeps its lists', async ($, on) => {
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /CABOS SUELTOS/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Pendientes/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /no está dentro de un repo git/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -279,8 +279,8 @@ test('outside git the band keeps the plan counter but shows no loose-end counter
   await w.start($)
   await $.tool.call({ tool: 'TaskCreate', subject: 'Primera tarea', description: 'd' })
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
-  expect((await band.find({ type: 'Text', text: /plan/ }))?.text).toBe('◐ plan 0/1')
-  expect(await band.find({ type: 'Text', text: /cabo|cola/ })).toBeUndefined()
+  expect((await band.find({ type: 'Text', text: /plan/ }))?.text).toBe('plan 0/1')
+  expect(await band.find({ type: 'Text', text: /pendiente|cola/ })).toBeUndefined()
   await band.unmount()
 })
 
@@ -476,13 +476,16 @@ test('Windows: the home directory as a repo is outside git', async ($, on) => {
   expect(w.writes).toEqual([])
 })
 
-test('an unreadable session file is named by its absolute path in the band', async ($, on) => {
+test('an unreadable session file is flagged in the band and named by its absolute path in the pane', async ($, on) => {
   const w = world(on, { [PATH]: '{ roto' }, { repos: REPOS })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
-  expect((await band.find({ type: 'Text', text: /ilegibles/ }))?.text).toContain(`revisa ${PATH}`)
+  expect((await band.find({ type: 'Text', text: /No puedo leer/ }))?.text).toBe('No puedo leer loose-ends.json')
   await band.unmount()
+  const pane = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
+  expect((await pane.find({ type: 'Text', text: /No puedo leer/ }))?.text).toContain(PATH)
+  await pane.unmount()
 })
 
 test('leaving git after a turn empties the band and the context', async ($, on) => {
