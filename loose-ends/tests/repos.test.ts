@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { FILE_TOOLS, candidatePaths, candidateRepos, formatCandidates, repoName } from '../lib/repos.mjs'
+import { FILE_TOOLS, candidatePaths, isIgnoredRepo, candidateRepos, formatCandidates, repoName } from '../lib/repos.mjs'
 
 describe('candidatePaths: file tools', () => {
   test('Edit, Write, MultiEdit and Read use file_path', () => {
@@ -37,7 +37,7 @@ describe('candidatePaths: Bash', () => {
     expect(bash('git -C /x/y status')).toEqual(['/x/y'])
   })
   test('absolute path tokens', () => {
-    expect(bash('cat /a/b/c.txt | grep foo > out.txt && ls /z')).toEqual(['/a/b/c.txt', '/z'])
+    expect(bash('cat /a/b/c.txt | grep foo > out.txt && ls /z/w')).toEqual(['/a/b/c.txt', '/z/w'])
   })
   test('quoted paths, with spaces too', () => {
     expect(bash('cd "/my repo/app" && git -C \'/other repo\' log')).toEqual(['/my repo/app', '/other repo'])
@@ -50,7 +50,7 @@ describe('candidatePaths: Bash', () => {
     expect(bash('tool --out=/a/b --x')).toEqual(['/a/b'])
   })
   test('dedupes and keeps the order of appearance', () => {
-    expect(bash('cd /a && ls /b && cat /a')).toEqual(['/a', '/b'])
+    expect(bash('cd /a && ls /b/c && cat /a/ /b/c')).toEqual(['/a', '/b/c'])
   })
   test('relative targets, /dev and the bare root are not candidates', () => {
     expect(bash('cd ../other && ls ./x 2>/dev/null && cat /dev/null /')).toEqual([])
@@ -61,8 +61,34 @@ describe('candidatePaths: Bash', () => {
     expect(bash('')).toEqual([])
     expect(bash(undefined)).toEqual([])
   })
+  test('single-segment tokens, URLs and regexes are not loose paths', () => {
+    expect(bash("grep -rn '/api' src && rg '/v1/' . && curl 'https://x.dev/a/b' && echo '/https?://x/y'")).toEqual([])
+    expect(bash('ls /api')).toEqual([])
+  })
+  test('explicit targets keep a single segment; real paths stay', () => {
+    expect(bash('cd /other && git -C /third status && tool --out=/x && cat /Users/x/repo/file.ts')).toEqual(['/other', '/third', '/x', '/Users/x/repo/file.ts'])
+  })
   test('a slash inside a word is not a path', () => {
     expect(bash('git checkout feat/x && echo a/b')).toEqual([])
+  })
+})
+
+describe('isIgnoredRepo', () => {
+  test('a toplevel with a .claude segment is ignored', () => {
+    expect(isIgnoredRepo('/Users/m/.claude/plugins/cache/x', '/Users/m')).toBe(true)
+    expect(isIgnoredRepo('/Users/m/.claude', '/Users/m')).toBe(true)
+    expect(isIgnoredRepo('/Users/m/.claude/', null)).toBe(true)
+  })
+  test('the home directory itself is ignored, with or without a trailing slash', () => {
+    expect(isIgnoredRepo('/Users/m', '/Users/m')).toBe(true)
+    expect(isIgnoredRepo('/Users/m/', '/Users/m')).toBe(true)
+    expect(isIgnoredRepo('/Users/m', '/Users/m/')).toBe(true)
+  })
+  test('ordinary repos stay, also under home and when home is unknown', () => {
+    expect(isIgnoredRepo('/Users/m/dev/web-app', '/Users/m')).toBe(false)
+    expect(isIgnoredRepo('/Users/m', null)).toBe(false)
+    expect(isIgnoredRepo('/Users/m/my.claude/x', '/Users/m')).toBe(false)
+    expect(isIgnoredRepo('/Users/m/.claudex', '/Users/m')).toBe(false)
   })
 })
 

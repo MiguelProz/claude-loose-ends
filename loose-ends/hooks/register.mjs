@@ -2,7 +2,7 @@ import { FILE, active, addItem, close, counts, dueReminders, expireReminded, mar
 import { FLASH_MS, bashFailed, classifyBash, initialMood, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
 import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
-import { FILE_TOOLS, candidatePaths, candidateRepos, repoName } from '../lib/repos.mjs'
+import { FILE_TOOLS, candidatePaths, candidateRepos, isIgnoredRepo, repoName } from '../lib/repos.mjs'
 import { renderBand, renderPane } from '../lib/view.mjs'
 
 const NO_GIT_NOTE = 'Esta sesión no está en un repo git: indica "repo" con la ruta del repo del cabo.'
@@ -17,7 +17,7 @@ let fileError = null
 let branch = null
 // Toplevel of the repo the session works in; null outside git, where nothing of the session is persisted.
 let sessionRepo = null
-let foreignError = null
+let homePath
 let touched = new Set()
 let touchChain = Promise.resolve()
 const repoCache = new Map()
@@ -86,33 +86,35 @@ async function load($) {
 }
 
 // Read-modify-write on another repo's file: its items never enter memory.
-async function mutateForeign($, fn, root) {
+async function mutateForeign($, fn, root, report) {
   const parsed = await readRepo($, root)
   if (!parsed.ok) {
-    foreignError = parsed.error
+    if (report) report.error = parsed.error
     return null
   }
-  const result = fn(parsed.items)
+  const result = fn(parsed.items, false)
   const nextItems = Array.isArray(result) ? result : result.items
   if (serialize(nextItems) !== serialize(parsed.items)) await $.fs.write(`${root}/${FILE}`, serialize(nextItems))
   return result
 }
 
 // Read-modify-write on a repo's file (the session's by default, resolved when the write runs); callers go through `mutate`, which serializes them.
-async function mutateNow($, fn, root) {
+// `fn(list, isSession)` says whether the file was the session's when it ran; `report.error` gets why an unreadable file was left alone.
+async function mutateNow($, fn, root, report) {
   const target = root === undefined ? sessionRepo : root
   if (target === null) {
     await load($)
     $.ui.invalidate('ui.render')
     return null
   }
-  if (target !== sessionRepo) return mutateForeign($, fn, target)
+  if (target !== sessionRepo) return mutateForeign($, fn, target, report)
   const fresh = await load($)
   if (fresh === null) {
+    if (report) report.error = fileError
     $.ui.invalidate('ui.render')
     return null
   }
-  const result = fn(fresh)
+  const result = fn(fresh, true)
   const nextItems = Array.isArray(result) ? result : result.items
   if (serialize(nextItems) !== serialize(fresh)) await $.fs.write(`${target}/${FILE}`, serialize(nextItems))
   items = nextItems
@@ -121,8 +123,8 @@ async function mutateNow($, fn, root) {
   return result
 }
 
-async function mutate($, fn, root) {
-  const run = writeChain.then(() => mutateNow($, fn, root))
+async function mutate($, fn, root, report) {
+  const run = writeChain.then(() => mutateNow($, fn, root, report))
   writeChain = run.catch(() => {})
   return run
 }
@@ -160,7 +162,7 @@ async function repoOf($, path, { file = false, fresh = false } = {}) {
     }
     if (top) {
       for (const d of tried) repoCache.set(d, top)
-      return top
+      return isIgnoredRepo(top, await homeDir($)) ? null : top
     }
     tried.push(dir)
     const parent = parentDir(dir)
@@ -170,13 +172,32 @@ async function repoOf($, path, { file = false, fresh = false } = {}) {
   return null
 }
 
+async function homeDir($) {
+  if (homePath === undefined) {
+    try {
+      homePath = (await $.env.get('HOME')) ?? null
+    } catch {
+      homePath = null
+    }
+  }
+  return homePath
+}
+
 // The session's repo from its root, read afresh; throws when git cannot say, so callers keep the last answer.
-async function refreshSessionRepo($) {
+// A repo under `.claude` or the home directory counts as no repo.
+async function resolveSessionRepo($) {
   const root = await projectRoot($)
   repoCache.delete(root)
   const top = await toplevelOf($, root)
   repoCache.set(root, top)
-  sessionRepo = top
+  sessionRepo = top && !isIgnoredRepo(top, await homeDir($)) ? top : null
+}
+
+// On the write chain, so a write never straddles a change of session repo.
+async function refreshSessionRepo($) {
+  const run = writeChain.then(() => resolveSessionRepo($))
+  writeChain = run.catch(() => {})
+  return run
 }
 
 async function branchOf($, dir) {
@@ -189,15 +210,20 @@ async function readBranch($) {
 }
 
 // Files a loose end in `target`, the toplevel of the repo it belongs to. Only the session repo's items live in memory.
+// `added` is undefined when that repo's file is unreadable (`error` says why).
 async function note($, input, target) {
   const now = await nowIso($)
-  const isSession = target === sessionRepo
   const noteBranch = await branchOf($, target)
-  if (isSession) branch = noteBranch
+  if (target === sessionRepo) branch = noteBranch
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
-  const res = await mutate($, list => addItem(list, { ...input, id, branch: noteBranch, now }), target)
-  if (res && res.added) $.ui.toast(isSession ? `Cabo suelto: ${res.added.text}` : `Cabo suelto (${repoName(target)}): ${res.added.text}`)
-  return res ? res.added : undefined
+  const report = {}
+  let wasSession = false
+  const res = await mutate($, (list, isSession) => {
+    wasSession = isSession
+    return addItem(list, { ...input, id, branch: noteBranch, now })
+  }, target, report)
+  if (res && res.added) $.ui.toast(wasSession ? `Cabo suelto: ${res.added.text}` : `Cabo suelto (${repoName(target)}): ${res.added.text}`)
+  return { added: res ? res.added : undefined, error: report.error, target }
 }
 
 async function feel($, ev) {
@@ -257,7 +283,7 @@ async function sweep($, answer, touchedNow) {
   for (const { repo, ...fresh } of parsed.fresh) {
     const target = repo ?? sessionRepo
     if (!target) continue
-    const added = await note($, { ...fresh, source: 'sweep' }, target)
+    const { added } = await note($, { ...fresh, source: 'sweep' }, target)
     if (added && added.priority === 'high') await feel($, { type: 'worry' })
   }
   if (parsed.resolved.length) {
@@ -347,6 +373,7 @@ export function register(on) {
   on('turn.start', async ($, e, next) => {
     working = true
     touched = new Set()
+    for (const [dir, top] of repoCache) if (top === null) repoCache.delete(dir)
     await feel($, { type: 'turn.start' })
     return next(e)
   })
@@ -374,8 +401,8 @@ export function register(on) {
       target = await repoOf($, e.repo.trim(), { fresh: true })
       if (!target) return { result: NOT_A_REPO }
     } else if (!target) return { result: NO_GIT_NOTE }
-    const added = await note($, { text: e.text, priority: e.priority, evidence: e.evidence, source: 'tool' }, target)
-    if (added === undefined) return { result: target === sessionRepo ? `No se pudo apuntar: ${FILE} está ilegible (${fileError}).` : `No se pudo apuntar: ${target}/${FILE} está ilegible (${foreignError}).` }
+    const { added, error } = await note($, { text: e.text, priority: e.priority, evidence: e.evidence, source: 'tool' }, target)
+    if (added === undefined) return { result: `No se pudo apuntar: ${target}/${FILE} está ilegible (${error}).` }
     if (added && added.priority === 'high') await feel($, { type: 'worry' })
     return { result: added ? `Apuntado (${added.id}): ${added.text}` : 'Ya estaba apuntado.' }
   })

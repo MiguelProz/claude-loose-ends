@@ -13,13 +13,17 @@ type Opts = {
   repos?: Record<string, string>
   // git toplevel -> current branch; the rest use `branch`
   branches?: Record<string, string>
+  // directories (and everything under them) that do not exist: git -C fails there
+  missing?: string[]
+  // $HOME; null for unset
+  home?: string | null
 }
 
 export function world(on: any, files: Record<string, string> = {}, opts: Opts = {}) {
   let branch = opts.branch ?? 'main'
   let root = opts.root ?? ROOT
   const repos = opts.repos ?? { [ROOT]: ROOT }
-  const flags = { failWrites: false, failGit: false, failLog: false }
+  const flags = { failWrites: false, failGit: false, failLog: false, throwGit: false }
   const runs: string[][] = []
   const logs: string[] = []
   const toasts: string[] = []
@@ -30,16 +34,21 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   const fs: Record<string, string> = { ...files }
   const clock = mock.clock(on, { now: Date.parse('2026-10-04T10:00:00.000Z') })
   const topOf = (dir: string) => {
+    // like real git: a file is not a directory, and neither is a path that does not exist
+    if (dir in fs || /[^/]\.[A-Za-z0-9]+$/.test(dir)) return null
+    if ((opts.missing ?? []).some(m => dir === m || dir.startsWith(`${m}/`))) return null
     const key = Object.keys(repos).filter(k => dir === k || dir.startsWith(`${k}/`)).sort((a, b) => b.length - a.length)[0]
     return key === undefined ? null : repos[key]
   }
   on('session.root', () => ({ value: root }))
+  on('env.get', () => ({ value: opts.home === null ? undefined : opts.home ?? '/Users/m' }))
   on('session.usage', () => ({ value: { startedAt: opts.startedAt ?? clock.now(), context: { tokens: 0, window: 200000, percent: 0 }, rateLimits: [] } }))
   on('fs.exists', ($: any, e: any) => { reads.push(e.path); return { value: e.path in fs } })
   on('fs.read', ($: any, e: any) => { reads.push(e.path); return { value: fs[e.path] } })
   on('fs.write', ($: any, e: any) => { if (flags.failWrites) throw new Error('disco lleno'); writes.push(e.path); fs[e.path] = e.text; return { value: undefined } })
   on('process.run', ($: any, e: any) => {
     runs.push(e.argv)
+    if (flags.throwGit) throw new Error('git no arranca')
     const result = (exitCode: number, stdout: string | undefined) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
     if (flags.failGit) return result(0, undefined)
     const dashC = e.argv[1] === '-C'

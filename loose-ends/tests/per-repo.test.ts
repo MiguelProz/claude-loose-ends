@@ -266,3 +266,153 @@ test('when git cannot answer after a turn the session keeps its repo', async ($,
   await w.clock.settle()
   expect((await $.prompt.context({ blocks: [] })).blocks.at(-1).text).toContain('Cabo de la sesión')
 })
+
+const plugin = '/Users/m/.claude/plugins/cache/p'
+
+test('outside git the band keeps the plan counter but shows no loose-end counters', async ($, on) => {
+  const w = world(on, {}, { repos: REPOS, root: '/home/m' })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  on('tool.call', ($: any, e: any) => (e.tool === 'TaskCreate' ? { result: { task: { id: 't1', subject: e.subject } } } : { result: {} }))
+  await w.start($)
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Primera tarea', description: 'd' })
+  const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
+  expect((await band.find({ type: 'Text', text: /plan/ }))?.text).toBe('◐ plan 0/1')
+  expect(await band.find({ type: 'Text', text: /cabo|cola/ })).toBeUndefined()
+  await band.unmount()
+})
+
+test('a repo under .claude is never a candidate nor written', async ($, on) => {
+  const w = world(on, {}, { repos: { ...REPOS, [plugin]: plugin } })
+  let asked = ''
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered(`{"new":[{"text":"Cabo del plugin","priority":"low","repo":"${plugin}"}],"resolved":[]}`) })
+  tools(on)
+  turns(on)
+  await w.start($)
+  await startTurn($)
+  await $.tool.call({ tool: 'Read', file_path: `${plugin}/skills/x/SKILL.md` })
+  await $.tool.call({ tool: 'Bash', command: `cat ${plugin}/README.md` })
+  await endTurn($)
+  await w.clock.settle()
+  expect(asked).not.toContain('Repos candidatos')
+  expect(w.writes).toEqual([PATH])
+  expect(w.saved().map((i: any) => i.text)).toEqual(['Cabo del plugin'])
+})
+
+test('the tool refuses a repo under .claude', async ($, on) => {
+  const w = world(on, {}, { repos: { ...REPOS, [plugin]: plugin } })
+  await w.start($)
+  const r = await $.tool.call({ tool: TOOL, text: 'Cabo del plugin', priority: 'low', repo: `${plugin}/skills` })
+  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+  expect(w.writes).toEqual([])
+})
+
+test('a session whose repo is the home directory behaves as outside git', async ($, on) => {
+  const w = world(on, {}, { repos: { '/Users/m': '/Users/m', '/other': '/other' }, root: '/Users/m/work' })
+  on('model.complete', () => answered('{"new":[{"text":"Cabo suelto en casa","priority":"low"}],"resolved":[]}'))
+  tools(on)
+  turns(on)
+  await w.start($)
+  const r = await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low' })
+  expect(String(r.result)).toContain('no está en un repo git')
+  const home = await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low', repo: '/Users/m/x' })
+  expect(home.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+  await startTurn($)
+  await endTurn($)
+  await w.clock.settle()
+  expect(w.writes).toEqual([])
+  expect(w.reads).toEqual([])
+})
+
+test('with HOME unknown only the .claude rule applies', async ($, on) => {
+  const w = world(on, {}, { repos: { '/Users/m': '/Users/m' }, root: '/Users/m/work', home: null })
+  await w.start($)
+  await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low' })
+  expect(w.writes).toEqual(['/Users/m/.claude/loose-ends.json'])
+})
+
+test('a directory that was not a repo is looked up again on the next turn, a repo is not', async ($, on) => {
+  const repos: Record<string, string> = { '/proj': '/proj', '/other': '/other' }
+  const w = world(on, {}, { repos })
+  const asks: string[] = []
+  on('model.complete', ($: any, e: any) => { asks.push(e.prompt); return answered('{"new":[],"resolved":[]}') })
+  tools(on)
+  turns(on)
+  await w.start($)
+  await startTurn($, 't1')
+  await $.tool.call({ tool: 'Read', file_path: '/late/src/a.ts' })
+  await $.tool.call({ tool: 'Read', file_path: '/other/src/a.ts' })
+  await endTurn($, 't1')
+  await w.clock.settle()
+  repos['/late'] = '/late'
+  const before = w.runs.length
+  await startTurn($, 't2')
+  await $.tool.call({ tool: 'Read', file_path: '/late/src/a.ts' })
+  await $.tool.call({ tool: 'Read', file_path: '/other/src/a.ts' })
+  await endTurn($, 't2')
+  await w.clock.settle()
+  expect(asks[0]).toContain('- other: /other')
+  expect(asks[0]).not.toContain('late')
+  expect(asks[1]).toContain('- late: /late')
+  const lookups = w.runs.slice(before).filter(a => a.includes('--show-toplevel'))
+  expect(lookups.some(a => a[2] === '/other/src')).toBe(false)
+})
+
+test('the failure message names the error of the repo it wrote to', async ($, on) => {
+  const conflict = '<<<<<<< HEAD\n{}\n=======\n>>>>>>> x\n'
+  const w = world(on, { [PATH]: conflict, [OTHER]: '{ roto' }, { repos: REPOS })
+  await w.start($)
+  const foreign = await $.tool.call({ tool: TOOL, text: 'Cabo en otro', priority: 'low', repo: '/other' })
+  expect(String(foreign.result)).toContain('/other/.claude/loose-ends.json')
+  expect(String(foreign.result)).toContain('(json)')
+  const own = await $.tool.call({ tool: TOOL, text: 'Cabo en la sesión', priority: 'low' })
+  expect(String(own.result)).toContain('(conflict)')
+  expect(String(own.result)).not.toContain('/other')
+  w.fs[OTHER] = JSON.stringify({ version: 1, items: [] })
+  const fixed = await $.tool.call({ tool: TOOL, text: 'Cabo en otro', priority: 'low', repo: '/other' })
+  expect(String(fixed.result)).toMatch(/^Apuntado/)
+})
+
+test('after the root moves, a note to the new session repo is a session note', async ($, on) => {
+  const w = world(on, {}, { repos: REPOS })
+  turns(on)
+  await w.start($)
+  w.setRoot('/other')
+  await endTurn($)
+  await w.clock.settle()
+  await $.tool.call({ tool: TOOL, text: 'Cabo en la nueva raíz', priority: 'low', repo: '/other' })
+  expect(w.toasts).toEqual(['Cabo suelto: Cabo en la nueva raíz'])
+  expect(w.savedAt(OTHER)).toHaveLength(1)
+})
+
+test('git throwing at start leaves the session outside git, and the tool says the path is not a repo', async ($, on) => {
+  const w = world(on, {}, { repos: REPOS })
+  await w.start($)
+  w.flags.throwGit = true
+  const r = await $.tool.call({ tool: TOOL, text: 'Cabo sin git', priority: 'low', repo: '/other' })
+  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+  expect(w.writes).toEqual([])
+})
+
+test('git throwing during start leaves the session without a repo and nothing is persisted', async ($, on) => {
+  const w = world(on, {}, { repos: REPOS })
+  w.flags.throwGit = true
+  await w.start($)
+  const r = await $.tool.call({ tool: TOOL, text: 'Cabo sin git', priority: 'low' })
+  expect(String(r.result)).toContain('no está en un repo git')
+  expect(w.writes).toEqual([])
+})
+
+test('a folder that does not exist yet resolves through its nearest existing parent', async ($, on) => {
+  const w = world(on, {}, { repos: REPOS, missing: ['/other/new'] })
+  await w.start($)
+  await $.tool.call({ tool: TOOL, text: 'Cabo en carpeta futura', priority: 'low', repo: '/other/new/deep' })
+  expect(w.writes).toEqual([OTHER])
+})
+
+test('a file path given as repo resolves through its folder', async ($, on) => {
+  const w = world(on, {}, { repos: REPOS })
+  await w.start($)
+  await $.tool.call({ tool: TOOL, text: 'Cabo por fichero', priority: 'low', repo: '/other/src/a.ts' })
+  expect(w.runs.filter(a => a.includes('--show-toplevel')).map(a => a[2])).toContain('/other/src/a.ts')
+  expect(w.writes).toEqual([OTHER])
+})

@@ -40,6 +40,9 @@ function shellCommands(command) {
   return commands.filter(words => words.length)
 }
 
+// A bare word counts as a path only with a second segment: `/api` in a grep pattern is not one, `/Users/x` is.
+const LOOSE_PATH = /^\/[^/]+\/[^/]+/
+
 const isAbsolute = p => typeof p === 'string' && p.startsWith('/') && p.length > 1 && !p.startsWith('/dev/')
 
 function bashPaths(command) {
@@ -52,8 +55,9 @@ function bashPaths(command) {
     const git = words.indexOf('git')
     if (git !== -1) for (let k = git + 1; k < words.length - 1; k++) if (words[k] === '-C') found.push(words[k + 1])
     for (const w of words) {
-      if (w.startsWith('/')) found.push(w)
-      else {
+      if (w.startsWith('/')) {
+        if (LOOSE_PATH.test(w) && !w.includes('://')) found.push(w)
+      } else {
         const value = /^-[^=\s]*=(\/.*)$/.exec(w)
         if (value) found.push(value[1])
       }
@@ -83,4 +87,14 @@ export function candidateRepos(sessionRepo, touched) {
 
 export function formatCandidates(paths) {
   return paths.map(p => `- ${repoName(p)}: ${p}`).join('\n')
+}
+
+const trimSlash = p => (p.length > 1 ? p.replace(/\/+$/, '') : p)
+
+// Repos where loose ends must never be written: anything under a `.claude` folder (plugin caches and
+// marketplaces are git repos) and the home directory itself, whose `.claude` is Claude Code's own.
+export function isIgnoredRepo(top, home) {
+  const path = trimSlash(top)
+  if (path.split('/').includes('.claude')) return true
+  return typeof home === 'string' && home !== '' && path === trimSlash(home)
 }
