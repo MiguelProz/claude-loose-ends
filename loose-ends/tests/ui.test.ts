@@ -76,3 +76,47 @@ test('/pendientes opens the pane', async ($, on) => {
   await $.command.run({ command: 'pendientes', args: '' })
   expect(opened).toBe('loose-ends')
 })
+
+test('Hazlo ahora does not submit when the file became unreadable', async ($, on) => {
+  const w = world(on, { [PATH]: file })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  let sent = ''
+  on('prompt.submit', ($: any, e: any) => { sent = e.text; return { text: e.text } })
+  await w.start($)
+  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
+  w.fs[PATH] = '<<<<<<< HEAD\n{}\n=======\n>>>>>>> x\n'
+  await ui.press({ key: 'now-a1' })
+  await w.clock.settle()
+  expect(sent).toBe('')
+  await ui.unmount()
+})
+
+test('a failing write from a pane button is logged, not thrown', async ($, on) => {
+  const w = world(on, { [PATH]: file })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  await w.start($)
+  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
+  w.flags.failWrites = true
+  await ui.press({ key: 'queue-a1' })
+  await w.clock.settle()
+  expect(w.logs).toEqual([expect.stringContaining('falló')])
+  await ui.unmount()
+})
+
+test('the discard picker closes once the item is resolved', async ($, on) => {
+  const w = world(on, { [PATH]: file })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  await w.start($)
+  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
+  await ui.press({ key: 'dismiss-a1' })
+  await ui.redraw()
+  expect(await ui.find({ key: 'reason-a1' })).toBeDefined()
+  await ui.press({ key: 'done-a1' })
+  await w.clock.settle()
+  await ui.redraw()
+  await ui.press({ key: 'reopen-a1' })
+  await w.clock.settle()
+  await ui.redraw()
+  expect(await ui.find({ key: 'reason-a1' })).toBeUndefined()
+  await ui.unmount()
+})

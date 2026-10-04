@@ -2,12 +2,12 @@ import { FILE, active, addItem, close, counts, dueReminders, expireReminded, mar
 import { FLASH_MS, bashFailed, classifyBash, initialMood, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
 import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
-import { PANE_ID, renderBand, renderPane } from '../lib/view.mjs'
+import { renderBand, renderPane } from '../lib/view.mjs'
 
 let items = []
 let fileError = null
 let branch = null
-let root = null
+let writeChain = Promise.resolve()
 let sessionStart = 0
 let working = false
 let plan = []
@@ -17,8 +17,15 @@ let discarding = null
 let showOthers = false
 
 async function projectRoot($) {
-  if (!root) root = await $.session.root()
-  return root
+  return await $.session.root()
+}
+
+function background($, promise, what) {
+  promise.catch(err => $.ui.log(`loose-ends: ${what} falló (${err?.message ?? err})`, { to: 'debug' }))
+}
+
+function clearDiscard(id) {
+  if (discarding === id) discarding = null
 }
 
 async function filePath($) {
@@ -42,7 +49,8 @@ async function load($) {
   return items
 }
 
-async function mutate($, fn) {
+// Read-modify-write on the file; callers go through `mutate`, which serializes them.
+async function mutateNow($, fn) {
   const fresh = await load($)
   if (fresh === null) {
     $.ui.invalidate('ui.render')
@@ -52,8 +60,15 @@ async function mutate($, fn) {
   const nextItems = Array.isArray(result) ? result : result.items
   if (serialize(nextItems) !== serialize(fresh)) await $.fs.write(await filePath($), serialize(nextItems))
   items = nextItems
+  if (discarding && !active(items).some(i => i.id === discarding)) discarding = null
   $.ui.invalidate('ui.render')
   return result
+}
+
+async function mutate($, fn) {
+  const run = writeChain.then(() => mutateNow($, fn))
+  writeChain = run.catch(() => {})
+  return run
 }
 
 async function readBranch($) {
@@ -63,6 +78,7 @@ async function readBranch($) {
 
 async function note($, input) {
   const now = await nowIso($)
+  branch = await readBranch($)
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const res = await mutate($, list => addItem(list, { ...input, id, branch, now }))
   if (res && res.added) $.ui.toast(`Cabo suelto: ${res.added.text}`)
@@ -78,7 +94,9 @@ async function feel($, ev) {
 
 async function readCommits($) {
   if (!sessionStart) return []
-  const since = new Date(sessionStart).toISOString()
+  const midnight = new Date(await $.clock.now())
+  midnight.setHours(0, 0, 0, 0)
+  const since = new Date(Math.max(sessionStart, midnight.getTime())).toISOString()
   const r = await $.process.run(['git', 'log', `--since=${since}`, '--format=%h%x09%s'], { cwd: await projectRoot($) })
   if (r.exitCode !== 0) return []
   return r.stdout
@@ -108,7 +126,9 @@ async function sweep($, answer) {
   }
   if (parsed.resolved.length) {
     const now = await nowIso($)
-    await mutate($, list => parsed.resolved.reduce((acc, id) => close(acc, id, { status: 'done', closedBy: 'sweep', now }), list))
+    await mutate($, list =>
+      parsed.resolved.reduce((acc, id) => (active(acc).some(i => i.id === id) ? close(acc, id, { status: 'done', closedBy: 'sweep', now }) : acc), list),
+    )
   }
 }
 
@@ -139,18 +159,22 @@ async function doNow($, id) {
   const item = items.find(i => i.id === id)
   if (!item) return
   const now = await nowIso($)
-  await mutate($, list => markReminded(queue(list, id), [id], now))
+  clearDiscard(id)
+  const res = await mutate($, list => markReminded(queue(list, id), [id], now))
+  if (res === null) return
   await $.prompt.submit({ text: doNowText(item) })
 }
 
 async function closeAs($, id, status, reason) {
+  clearDiscard(id)
   const now = await nowIso($)
   await mutate($, list => close(list, id, { status, reason, closedBy: 'user', now }))
 }
 
 export function register(on) {
   on('session.start', async ($, e, next) => {
-    root = null
+    discarding = null
+    showOthers = false
     sessionStart = (await $.session.usage()).startedAt
     await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA })
     await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: plan, cabos sueltos y hecho', immediate: true })
@@ -189,12 +213,15 @@ export function register(on) {
     if (e.agentId) return r
     working = false
     await feel($, { type: 'turn.end' })
+    branch = await readBranch($)
+    await load($)
     commits = await readCommits($)
-    if (!e.isAborted && shouldSweep(e.answer)) void sweep($, e.answer)
+    if (!e.isAborted && shouldSweep(e.answer)) background($, sweep($, e.answer), 'el barrido')
     return r
   })
 
   on('tool.call', { tool: 'mcp__loose-ends__note_loose_end' }, async ($, e) => {
+    if (String(e.text ?? '').trim().length < 3) return { result: 'Texto demasiado corto: describe el cabo en una frase.' }
     const added = await note($, { text: e.text, priority: e.priority, evidence: e.evidence, source: 'tool' })
     if (added === undefined) return { result: `No se pudo apuntar: ${FILE} está ilegible (${fileError}).` }
     if (added && added.priority === 'high') await feel($, { type: 'worry' })
@@ -236,7 +263,7 @@ export function register(on) {
     const el = $.ui.resolve(e)
     const now = await $.clock.now()
     return renderBand(el, e.surface, bandModel(now), {
-      openPane: () => { void $.ui.open({ id: 'loose-ends', title: 'Cuaderno' }) },
+      openPane: () => { background($, $.ui.open({ id: 'loose-ends', title: 'Cuaderno' }), 'abrir el cuaderno') },
     })
   })
 
@@ -245,13 +272,13 @@ export function register(on) {
     const el = $.ui.resolve(e)
     const now = await $.clock.now()
     return renderPane(el, paneModel(now), {
-      doNow: id => { void doNow($, id) },
-      queue: id => { void mutate($, list => queue(list, id)) },
-      done: id => { void closeAs($, id, 'done', undefined) },
+      doNow: id => { background($, doNow($, id), 'Hazlo ahora') },
+      queue: id => { clearDiscard(id); background($, mutate($, list => queue(list, id)), 'poner en cola') },
+      done: id => { background($, closeAs($, id, 'done', undefined), 'cerrar el cabo') },
       startDiscard: id => { discarding = discarding === id ? null : id; $.ui.invalidate('ui.render') },
-      dismiss: (id, reason) => { discarding = null; void closeAs($, id, 'dismissed', reason) },
-      setPriority: (id, p) => { void mutate($, list => setPriority(list, id, p)) },
-      reopen: id => { void mutate($, list => reopen(list, id)) },
+      dismiss: (id, reason) => { background($, closeAs($, id, 'dismissed', reason), 'descartar el cabo') },
+      setPriority: (id, p) => { background($, mutate($, list => setPriority(list, id, p)), 'cambiar la prioridad') },
+      reopen: id => { clearDiscard(id); background($, mutate($, list => reopen(list, id)), 'reabrir el cabo') },
       toggleOthers: () => { showOthers = !showOthers; $.ui.invalidate('ui.render') },
     })
   })

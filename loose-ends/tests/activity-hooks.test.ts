@@ -46,3 +46,28 @@ test('tool calls still run through and are observed', async ($, on) => {
   const b = await $.tool.call({ tool: 'Bash', command: 'npx vitest run' })
   expect(b.isError).toBe(true)
 })
+
+test('sweep never overwrites an item the user closed meanwhile', async ($, on) => {
+  const item = { id: 'a1', text: 'Tipar drafts', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-01T00:00:00.000Z' }
+  const w = world(on, { [PATH]: JSON.stringify({ version: 1, items: [item] }) })
+  on('model.complete', () => {
+    w.fs[PATH] = JSON.stringify({ version: 1, items: [{ ...item, status: 'dismissed', closedBy: 'user', closedAt: '2026-10-04T10:00:01.000Z' }] })
+    return answered('{"new":[],"resolved":["a1"]}')
+  })
+  done(on)
+  await w.start($)
+  await $.turn.complete({ answer: 'y'.repeat(400), durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
+  await w.clock.settle()
+  expect(w.saved()[0]).toMatchObject({ status: 'dismissed', closedBy: 'user' })
+})
+
+test('commits are bounded to today even for a resumed session', async ($, on) => {
+  const w = world(on, {}, { startedAt: Date.parse('2026-10-01T08:00:00.000Z') })
+  done(on)
+  await w.start($)
+  await $.turn.complete({ answer: 'corto', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
+  const midnight = new Date(Date.parse('2026-10-04T10:00:00.000Z'))
+  midnight.setHours(0, 0, 0, 0)
+  const log = w.runs.find(a => a[1] === 'log')
+  expect(log).toContain(`--since=${midnight.toISOString()}`)
+})

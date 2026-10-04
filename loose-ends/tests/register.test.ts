@@ -62,3 +62,30 @@ test('Stop stays quiet when another Stop hook blocks', async ($, on) => {
   expect(r.block).toBe('typecheck falla')
   expect(w.saved()[0].remindedAt).toBeUndefined()
 })
+
+test('concurrent notes are both saved', async ($, on) => {
+  const w = world(on)
+  await w.start($)
+  await Promise.all([
+    $.tool.call({ tool: TOOL, text: 'Primer cabo suelto', priority: 'low' }),
+    $.tool.call({ tool: TOOL, text: 'Segundo cabo suelto', priority: 'low' }),
+  ])
+  expect(w.saved().map((i: any) => i.text).sort()).toEqual(['Primer cabo suelto', 'Segundo cabo suelto'])
+})
+
+test('each note is stamped with the branch at that moment', async ($, on) => {
+  const w = world(on, {}, { branch: 'main' })
+  await w.start($)
+  await $.tool.call({ tool: TOOL, text: 'Cabo en main', priority: 'low' })
+  w.setBranch('feat/x')
+  await $.tool.call({ tool: TOOL, text: 'Cabo en la rama', priority: 'low' })
+  expect(w.saved().map((i: any) => i.branch)).toEqual(['main', 'feat/x'])
+})
+
+test('a too-short text is not reported as a duplicate', async ($, on) => {
+  const w = world(on)
+  await w.start($)
+  const r = await $.tool.call({ tool: TOOL, text: ' a ', priority: 'low' })
+  expect(String(r.result)).toContain('demasiado corto')
+  expect(w.saved()).toEqual([])
+})
