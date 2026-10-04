@@ -25,6 +25,13 @@ Requiere Claude Code 2.1.287 o posterior (probado con 2.1.288).
     /plugin install loose-ends@claude-loose-ends
     /reload-plugins
 
+## Conflictos de merge
+
+`.claude/loose-ends.json` va versionado: si dos ramas apuntaron cabos nuevos, el
+merge tendrá conflicto en ese fichero. Resuélvelo conservando los dos arrays
+`items` (la unión, sin repetir `id`). Mientras el fichero tenga marcas de
+conflicto el mod no escribe y la banda avisa.
+
 ## Desactivar
 
 `/plugin` → pestaña Installed → loose-ends. Los datos se quedan en
