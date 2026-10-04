@@ -21,12 +21,23 @@ async function projectRoot($) {
   return await $.session.root()
 }
 
+async function logDebug($, message) {
+  try {
+    await $.ui.log(message, { to: 'debug' })
+  } catch {}
+}
+
 function background($, promise, what) {
-  promise.catch(async err => {
-    try {
-      await $.ui.log(`loose-ends: ${what} falló (${err?.message ?? err})`, { to: 'debug' })
-    } catch {}
-  })
+  promise.catch(err => logDebug($, `loose-ends: ${what} falló (${err?.message ?? err})`))
+}
+
+// Runs one step that must not break the hook: a failure is logged and the next step still runs.
+async function guarded($, what, step) {
+  try {
+    await step()
+  } catch (err) {
+    await logDebug($, `loose-ends: ${what} falló (${err?.message ?? err})`)
+  }
 }
 
 function clearDiscard(id) {
@@ -219,13 +230,9 @@ export function register(on) {
     if (e.agentId) return r
     working = false
     await feel($, { type: 'turn.end' })
-    try {
-      branch = await readBranch($)
-      await mutate($, list => list)
-      commits = await readCommits($)
-    } catch (err) {
-      $.ui.log(`loose-ends: refrescar tras el turno falló (${err?.message ?? err})`, { to: 'debug' })
-    }
+    await guarded($, 'leer la rama tras el turno', async () => { branch = await readBranch($) })
+    await guarded($, 'refrescar los cabos tras el turno', () => mutate($, list => list))
+    await guarded($, 'leer los commits tras el turno', async () => { commits = await readCommits($) })
     if (e.reason === 'answer' && shouldSweep(e.answer)) background($, sweep($, e.answer), 'el barrido')
     return r
   })

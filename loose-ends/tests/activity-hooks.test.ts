@@ -93,7 +93,7 @@ test('a git failure after the turn does not reject the hook', async ($, on) => {
   w.flags.failGit = true
   const r = await $.turn.complete({ answer: 'corto', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
   expect(r.text).toBe('corto')
-  expect(w.logs.some(l => l.includes('refrescar tras el turno falló'))).toBe(true)
+  expect(w.logs.some(l => l.includes('leer la rama tras el turno falló'))).toBe(true)
 })
 
 test('turn end refreshes the items from a file edited by hand', async ($, on) => {
@@ -105,4 +105,19 @@ test('turn end refreshes the items from a file edited by hand', async ($, on) =>
   await $.turn.complete({ answer: 'corto', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
   const r = await $.prompt.context({ blocks: [] })
   expect(r.blocks.at(-1).text).toContain('Escrito a mano')
+})
+
+test('with git failing the items still refresh before the sweep', async ($, on) => {
+  const w = world(on)
+  let asked = ''
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[],"resolved":[]}') })
+  done(on)
+  await w.start($)
+  w.fs[PATH] = JSON.stringify({ version: 1, items: [{ id: 'n1', text: 'Añadido entre turnos', priority: 'low', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
+  w.flags.failGit = true
+  await $.turn.complete({ answer: 'y'.repeat(400), durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
+  await w.clock.settle()
+  expect(w.logs.some(l => l.includes('leer la rama tras el turno falló'))).toBe(true)
+  expect(w.logs.some(l => l.includes('leer los commits tras el turno falló'))).toBe(true)
+  expect(asked).toContain('n1: Añadido entre turnos')
 })
