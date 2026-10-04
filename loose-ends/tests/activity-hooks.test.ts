@@ -35,6 +35,17 @@ test('the sweep drops a new item whose evidence the answer never said', async ($
   await $.turn.complete({ answer: longAnswer('y'), durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
   await w.clock.settle()
   expect(w.saved().map((i: any) => i.text)).toEqual(['Cabo real'])
+  expect(w.logs).toContain('loose-ends: 1 cabo descartado por evidencia no literal')
+})
+
+test('the sweep logs nothing about the gate when no item is dropped', async ($, on) => {
+  const w = world(on)
+  on('model.complete', () => answered('{"new":[{"text":"Cabo real","priority":"low","evidence":"lo dejo para otro día"}],"resolved":[]}'))
+  done(on)
+  await w.start($)
+  await $.turn.complete({ answer: longAnswer('y'), durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
+  await w.clock.settle()
+  expect(w.logs.some(l => l.includes('evidencia'))).toBe(false)
 })
 
 test('short answers are not swept; broken replies change nothing', async ($, on) => {

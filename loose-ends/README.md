@@ -9,7 +9,8 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   deja sin hacer (un bug o una deuda sin arreglar, un test que se salta, un
   aviso que se ignora), no esperas, comprobaciones, preguntas ni informes de
   estado. El barrido apunta como máximo 2 por respuesta y solo si cita
-  literalmente la frase de la respuesta donde lo deja sin hacer.
+  literalmente la frase de la respuesta donde lo deja sin hacer (sin contar
+  Markdown, comillas ni viñetas).
 - **Dónde se guardan**: `.claude/loose-ends.json` en la raíz del **repo git al
   que pertenece cada cabo**, no en el de la sesión que lo encontró. Sin
   `repo`, la herramienta apunta en el repo de la sesión; con `repo` (ruta

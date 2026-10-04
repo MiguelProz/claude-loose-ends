@@ -49,32 +49,64 @@ function firstJsonObject(text) {
   return null
 }
 
-function squash(text) {
-  return text.replace(/\s+/g, ' ').trim().toLowerCase()
+// Both the answer and the evidence go through the same normalization, so Markdown, quote style and list
+// markers never decide whether a quote is literal.
+const QUOTE_MARKS = /[`*_\u00ab\u00bb"\u201c\u201d'\u2019]/g
+const LIST_MARKER = /^[ \t]*(?:[-*\u2022]|\d+[.)])[ \t]+/gm
+
+function normalize(text) {
+  return text
+    .normalize('NFC')
+    .replace(/\u2039\u2039\u2039/g, '<<<')
+    .replace(/\u203a\u203a\u203a/g, '>>>')
+    .replace(LIST_MARKER, '')
+    .replace(QUOTE_MARKS, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
 }
 
-// Evidence must be a literal stretch of the answer (case and whitespace aside), long enough to mean something.
-function quotedIn(evidence, haystack) {
-  if (typeof evidence !== 'string') return false
-  const needle = squash(evidence)
-  return needle.length >= MIN_EVIDENCE && haystack.includes(needle)
+function normalizeEvidence(evidence) {
+  return normalize(evidence.replace(/(?:\u2026|\.{3})\s*$/, ''))
+}
+
+// Evidence is shown to the user between quotes: drop emphasis marks, keep underscores inside identifiers.
+function cleanEvidence(evidence) {
+  return evidence
+    .replace(/[`*]/g, '')
+    .replace(/(^|\s)_+(?=\S)/g, '$1')
+    .replace(/(\S)_+(?=\s|$)/g, '$1')
+    .trim()
 }
 
 export function parseSweepReply(text, openIds, candidatePaths = [], answer = '') {
   const data = firstJsonObject(text)
   if (!data) return null
   const repos = new Set(candidatePaths)
-  const haystack = squash(typeof answer === 'string' ? answer : '')
-  const fresh = (Array.isArray(data.new) ? data.new : [])
-    .filter(x => x && typeof x.text === 'string' && x.text.trim().length >= 3 && quotedIn(x.evidence, haystack))
+  const haystack = normalize(typeof answer === 'string' ? answer : '')
+  const candidates = (Array.isArray(data.new) ? data.new : []).filter(x => x && typeof x.text === 'string' && x.text.trim().length >= 3)
+  const seen = new Set()
+  let notLiteral = 0
+  // one sentence can back one item only
+  const quoted = candidates.filter(x => {
+    const needle = typeof x.evidence === 'string' ? normalizeEvidence(x.evidence) : ''
+    if (needle.length < MIN_EVIDENCE || !haystack.includes(needle)) {
+      notLiteral++
+      return false
+    }
+    if (seen.has(needle)) return false
+    seen.add(needle)
+    return true
+  })
+  const fresh = quoted
     .slice(0, MAX_NEW)
     .map(x => ({
       text: x.text.trim().slice(0, 300),
       priority: PRIORITIES.includes(x.priority) ? x.priority : 'medium',
-      evidence: x.evidence.slice(0, 400),
+      evidence: cleanEvidence(x.evidence).slice(0, 400),
       repo: typeof x.repo === 'string' && repos.has(x.repo) ? x.repo : undefined,
     }))
   const known = new Set(openIds)
   const resolved = [...new Set((Array.isArray(data.resolved) ? data.resolved : []).filter(id => known.has(id)))]
-  return { fresh, resolved }
+  return { fresh, resolved, dropped: notLiteral }
 }

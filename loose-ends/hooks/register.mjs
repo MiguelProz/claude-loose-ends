@@ -201,6 +201,8 @@ async function resolveSessionRepo($) {
     fileError = null
     discarding = null
     expanded = null
+    showOthers = false
+    showDone = false
     $.ui.invalidate('ui.render')
   }
 }
@@ -292,6 +294,7 @@ async function sweep($, answer, touchedNow) {
     $.ui.log('loose-ends: barrido con JSON inválido', { to: 'debug' })
     return
   }
+  if (parsed.dropped) $.ui.log(`loose-ends: ${parsed.dropped} ${parsed.dropped === 1 ? 'cabo descartado' : 'cabos descartados'} por evidencia no literal`, { to: 'debug' })
   for (const { repo, ...fresh } of parsed.fresh) {
     const target = repo ?? sessionRepo
     if (!target) continue

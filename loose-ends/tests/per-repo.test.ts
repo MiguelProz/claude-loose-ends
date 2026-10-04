@@ -9,7 +9,8 @@ const PANE = { component: 'Pane', requestId: 'loose-ends', props: { title: 'Cuad
 const own = JSON.stringify({ version: 1, items: [{ id: 'a1', text: 'Cabo de la sesión', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
 const EVIDENCE = 'lo dejo para otro día'
 // long enough to be swept (500+) and carrying the phrase the fake Haiku quotes as evidence
-const longAnswer = (fill: string) => `${fill.repeat(500)} ${EVIDENCE}`
+const EVIDENCE_2 = 'y el test lo omito por ahora'
+const longAnswer = (fill: string) => `${fill.repeat(500)} ${EVIDENCE}. ${EVIDENCE_2}`
 const answered = (text: string) => ({ value: { isAnswered: true, text, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
 const tools = (on: any) => on('tool.call', () => ({ result: {} }))
 const turns = (on: any) => {
@@ -87,7 +88,7 @@ test('the session repo is refreshed after each turn', async ($, on) => {
 test('the sweep files a new item in a repo touched this turn when Haiku names it', async ($, on) => {
   const w = world(on, { [PATH]: own }, { repos: REPOS, branches: { '/other': 'feat/o' } })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"lo dejo para otro día"}],"resolved":["a1"]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":["a1"]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -217,7 +218,7 @@ test('outside git nothing touches the session filesystem', async ($, on) => {
 test('outside git the sweep writes only items whose repo is a touched one', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, root: '/home/m' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo sin repo","priority":"low","evidence":"lo dejo para otro día"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo sin repo","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -452,7 +453,7 @@ const WIN_OTHER = 'C:/Users/x/other'
 test('Windows: a drive-letter session repo and touched repo, HOME from USERPROFILE', async ($, on) => {
   const w = world(on, {}, { repos: { [WIN]: WIN, [WIN_OTHER]: WIN_OTHER, 'C:/Users/x': 'C:/Users/x' }, root: 'C:\\Users\\x\\proj\\src', home: null, userProfile: 'C:\\Users\\x' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"C:/Users/x/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"lo dejo para otro día"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"C:/Users/x/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -501,4 +502,31 @@ test('leaving git after a turn empties the band and the context', async ($, on) 
   expect(await band.find({ type: 'Text', text: /cabo/ })).toBeUndefined()
   expect((await $.prompt.context({ blocks: [] })).blocks).toEqual([])
   await band.unmount()
+})
+
+test('the pane folds the other branches and the done list when the session repo changes', async ($, on) => {
+  const stale = JSON.stringify({ version: 1, items: [
+    { id: 'a1', text: 'Cabo de la sesión', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' },
+    { id: 'o1', text: 'De otra rama', priority: 'low', status: 'open', branch: 'feat/x', createdAt: '2026-10-04T09:00:00.000Z' },
+  ] })
+  const w = world(on, { [PATH]: stale, [OTHER]: stale }, { repos: REPOS, startedAt: Date.parse('2026-10-04T09:00:00.000Z'), log: 'abc1234\tfeat: algo\n' })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  turns(on)
+  await w.start($)
+  await endTurn($)
+  await w.clock.settle()
+  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
+  await ui.press({ key: 'toggle-others' })
+  await ui.press({ key: 'toggle-done' })
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /De otra rama/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /abc1234/ })).toBeDefined()
+  w.setRoot('/other')
+  await endTurn($)
+  await w.clock.settle()
+  await ui.redraw()
+  expect(await ui.find({ key: 'toggle-others' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /De otra rama/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /abc1234/ })).toBeUndefined()
+  await ui.unmount()
 })

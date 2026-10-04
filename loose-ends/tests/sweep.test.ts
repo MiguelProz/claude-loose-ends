@@ -3,7 +3,9 @@ import { buildSweepPrompt, MIN_ANSWER, parseSweepReply, shouldSweep } from '../l
 import { SWEEP_SYSTEM, doNowText, formatContext, reminderText, TOOL_GUIDE, TOOL_ID, TOOL_SCHEMA } from '../lib/prompts.mjs'
 
 const EVIDENCE = 'lo dejo fuera del alcance'
-const ANSWER = `Terminé la tarea. Eso sí, ${EVIDENCE} de esta rama.`
+const EVIDENCE_2 = 'el test lo omito por ahora'
+const EVIDENCE_3 = 'el aviso de tipos lo ignoro'
+const ANSWER = `Terminé la tarea. Eso sí, ${EVIDENCE} de esta rama. Además ${EVIDENCE_2} y ${EVIDENCE_3}.`
 const newItems = (...evidences: (string | undefined)[]) => JSON.stringify({ new: evidences.map((evidence, k) => ({ text: `cabo ${k}`, priority: 'low', evidence })), resolved: [] })
 const item = (over = {}) => ({ id: 'a1', text: 'Tipar team-drafts', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T10:00:00.000Z', ...over })
 
@@ -23,13 +25,14 @@ describe('sweep', () => {
     expect(buildSweepPrompt('r', [item()])).toContain('Cabos abiertos:\n- a1')
   })
   test('parses JSON wrapped in prose and cleans it', () => {
-    const reply = 'Aquí va:\n{"new":[{"text":"  Añadir test de canonical ","priority":"high","evidence":"lo dejo fuera del alcance"},{"text":"x"},{"text":"Sin prioridad","evidence":"lo dejo fuera del alcance"}],"resolved":["a1","zz"]}'
+    const reply = 'Aquí va:\n{"new":[{"text":"  Añadir test de canonical ","priority":"high","evidence":"lo dejo fuera del alcance"},{"text":"x"},{"text":"Sin prioridad","evidence":"el test lo omito por ahora"}],"resolved":["a1","zz"]}'
     expect(parseSweepReply(reply, ['a1'], [], ANSWER)).toEqual({
       fresh: [
         { text: 'Añadir test de canonical', priority: 'high', evidence: 'lo dejo fuera del alcance' },
-        { text: 'Sin prioridad', priority: 'medium', evidence: 'lo dejo fuera del alcance' },
+        { text: 'Sin prioridad', priority: 'medium', evidence: 'el test lo omito por ahora' },
       ],
       resolved: ['a1'],
+      dropped: 0,
     })
   })
   test('broken replies give null', () => {
@@ -51,7 +54,7 @@ describe('sweep', () => {
     expect(p.endsWith('\n>>>')).toBe(true)
   })
   test('caps new items at 2', () => {
-    const many = JSON.stringify({ new: Array.from({ length: 9 }, (_, k) => ({ text: `cabo ${k}`, evidence: EVIDENCE })), resolved: [] })
+    const many = JSON.stringify({ new: [EVIDENCE, EVIDENCE_2, EVIDENCE_3, 'Terminé la tarea.'].map((evidence, k) => ({ text: `cabo ${k}`, evidence })), resolved: [] })
     expect(parseSweepReply(many, [], [], ANSWER)?.fresh).toHaveLength(2)
   })
   test('MIN_ANSWER is 500', () => {
@@ -72,8 +75,58 @@ describe('sweep', () => {
     expect(parseSweepReply(newItems('lo dejo fuera'), [], [], ANSWER)?.fresh).toHaveLength(1)
   })
   test('the cap applies after the gate, so a dropped item does not use a slot', () => {
-    const reply = newItems('inventada, no está en la respuesta', EVIDENCE, EVIDENCE, EVIDENCE)
+    const reply = newItems('inventada, no está en la respuesta', EVIDENCE, EVIDENCE_2, EVIDENCE_3)
     expect(parseSweepReply(reply, [], [], ANSWER)?.fresh.map(f => f.text)).toEqual(['cabo 1', 'cabo 2'])
+  })
+  test('markdown and quote marks in the answer do not defeat a plain evidence', () => {
+    const answer = 'Terminé. Eso sí, **`lo dejo`** _fuera_ del alcance de esta rama, para otro día.'
+    expect(parseSweepReply(newItems('lo dejo fuera del alcance'), [], [], answer)?.fresh).toHaveLength(1)
+    expect(parseSweepReply(newItems('`lo dejo` *fuera* del alcance'), [], [], 'Eso sí: lo dejo fuera del alcance.')?.fresh).toHaveLength(1)
+  })
+  test('curly and straight quotes match each other', () => {
+    expect(parseSweepReply(newItems('no toqué el "canonical" todavía'), [], [], 'Dije que no toqué el “canonical” todavía, ojo.')?.fresh).toHaveLength(1)
+    expect(parseSweepReply(newItems('no toqué el “canonical” todavía'), [], [], "No toqué el 'canonical' todavía")?.fresh).toHaveLength(1)
+    expect(parseSweepReply(newItems('«no toqué el canonical todavía»'), [], [], 'No toqué el canonical todavía')?.fresh).toHaveLength(1)
+    expect(parseSweepReply(newItems("it’s not done yet, sorry"), [], [], "it's not done yet, sorry")?.fresh).toHaveLength(1)
+  })
+  test('a trailing ellipsis on the evidence is ignored', () => {
+    expect(parseSweepReply(newItems('lo dejo fuera del alcance…'), [], [], ANSWER)?.fresh).toHaveLength(1)
+    expect(parseSweepReply(newItems('lo dejo fuera del alcance...'), [], [], ANSWER)?.fresh).toHaveLength(1)
+    expect(parseSweepReply(newItems('lo dejo fuera del alcance de otra cosa…'), [], [], ANSWER)?.fresh).toEqual([])
+  })
+  test('list markers at line starts are ignored on both sides', () => {
+    const answer = 'Pendiente:\n- lo dejo fuera del alcance\n1. y el segundo detalle aparte'
+    expect(parseSweepReply(newItems('- lo dejo fuera del alcance'), [], [], answer)?.fresh).toHaveLength(1)
+    expect(parseSweepReply(newItems('lo dejo fuera del alcance y el segundo detalle aparte'), [], [], answer)?.fresh).toHaveLength(1)
+  })
+  test('the fence substitutes of the prompt map back to the originals', () => {
+    expect(parseSweepReply(newItems('usa ‹‹‹ como marca de bloque'), [], [], 'Aviso: usa <<< como marca de bloque')?.fresh).toHaveLength(1)
+    expect(parseSweepReply(newItems('cierra con >>> al terminar el bloque'), [], [], 'cierra con ››› al terminar el bloque')?.fresh).toHaveLength(1)
+  })
+  test('accents are compared after NFC', () => {
+    expect(parseSweepReply(newItems('lo dejo para otro di\u0301a sin falta'), [], [], 'lo dejo para otro d\u00eda sin falta')?.fresh).toHaveLength(1)
+  })
+  test('the 12-character minimum counts after normalization', () => {
+    expect(parseSweepReply(newItems('**`lo dejo`**'), [], [], ANSWER)?.fresh).toEqual([])
+  })
+  test('the dropped count says how many the gate removed', () => {
+    expect(parseSweepReply(newItems('inventada, no está en la respuesta', EVIDENCE), [], [], ANSWER)?.dropped).toBe(1)
+    expect(parseSweepReply(newItems(EVIDENCE), [], [], ANSWER)?.dropped).toBe(0)
+  })
+  test('stored evidence has no markdown emphasis', () => {
+    const answer = 'Eso sí, **`lo dejo`** _fuera_ del alcance, snake_case_name intacto.'
+    const reply = JSON.stringify({ new: [{ text: 'Cabo uno', evidence: '**`lo dejo`** _fuera_ del alcance' }], resolved: [] })
+    expect(parseSweepReply(reply, [], [], answer)?.fresh[0].evidence).toBe('lo dejo fuera del alcance')
+    const snake = JSON.stringify({ new: [{ text: 'Cabo dos', evidence: 'snake_case_name intacto' }], resolved: [] })
+    expect(parseSweepReply(snake, [], [], answer)?.fresh[0].evidence).toBe('snake_case_name intacto')
+  })
+  test('two items quoting the same sentence only keep the first', () => {
+    const reply = JSON.stringify({ new: [{ text: 'Uno', evidence: EVIDENCE }, { text: 'Dos', evidence: `**${EVIDENCE.toUpperCase()}**` }, { text: 'Tres', evidence: 'Terminé la tarea.' }], resolved: [] })
+    expect(parseSweepReply(reply, [], [], ANSWER)?.fresh.map(f => f.text)).toEqual(['Uno', 'Tres'])
+    expect(parseSweepReply(reply, [], [], ANSWER)?.dropped).toBe(0)
+    const distinct = 'Primero: lo dejo fuera del alcance. Segundo: el test lo omito por ahora.'
+    const two = JSON.stringify({ new: [{ text: 'Uno', evidence: 'lo dejo fuera del alcance' }, { text: 'Dos', evidence: 'el test lo omito por ahora' }], resolved: [] })
+    expect(parseSweepReply(two, [], [], distinct)?.fresh.map(f => f.text)).toEqual(['Uno', 'Dos'])
   })
   test('resolved ids do not need the evidence gate', () => {
     expect(parseSweepReply('{"new":[],"resolved":["a1"]}', ['a1'], [], ANSWER)?.resolved).toEqual(['a1'])
@@ -127,12 +180,13 @@ describe('sweep with candidate repos', () => {
   })
   test('a repo is kept only when it is one of the candidates', () => {
     const ev = `"evidence":"${EVIDENCE}"`
-    const reply = `{"new":[{"text":"Cabo en la api","priority":"low",${ev},"repo":"/Users/m/api"},{"text":"Cabo en otro sitio","priority":"low",${ev},"repo":"/etc/otro"}],"resolved":[]}`
+    const ev2 = `"evidence":"${EVIDENCE_2}"`
+    const reply = `{"new":[{"text":"Cabo en la api","priority":"low",${ev},"repo":"/Users/m/api"},{"text":"Cabo en otro sitio","priority":"low",${ev2},"repo":"/etc/otro"}],"resolved":[]}`
     expect(parseSweepReply(reply, [], cands, ANSWER)?.fresh.map(f => [f.text, f.repo])).toEqual([
       ['Cabo en la api', '/Users/m/api'],
       ['Cabo en otro sitio', undefined],
     ])
-    const more = `{"new":[{"text":"Cabo sin repo","priority":"low",${ev}},{"text":"Repo no texto","priority":"low",${ev},"repo":7}],"resolved":[]}`
+    const more = `{"new":[{"text":"Cabo sin repo","priority":"low",${ev}},{"text":"Repo no texto","priority":"low",${ev2},"repo":7}],"resolved":[]}`
     expect(parseSweepReply(more, [], cands, ANSWER)?.fresh.map(f => [f.text, f.repo])).toEqual([
       ['Cabo sin repo', undefined],
       ['Repo no texto', undefined],
