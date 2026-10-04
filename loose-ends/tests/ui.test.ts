@@ -1,0 +1,78 @@
+import { expect, test } from 'claude-code/testing'
+import { PATH, world } from './world.ts'
+
+const BAND = { component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as any }
+const PANE = { component: 'Pane', requestId: 'loose-ends', props: { title: 'Cuaderno', isFocused: true, bodyColumns: 60, placement: 'dock' } as any }
+const file = JSON.stringify({ version: 1, items: [
+  { id: 'a1', text: 'Test de canonical', priority: 'high', status: 'open', branch: 'main', createdAt: '2026-10-04T09:48:00.000Z' },
+  { id: 'b2', text: 'Otra rama', priority: 'low', status: 'open', branch: 'feat/x', createdAt: '2026-10-04T09:00:00.000Z' },
+] })
+
+test('band: Chispa on desktop, face on terminal, counters for this branch', async ($, on) => {
+  const w = world(on, { [PATH]: file })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  await w.start($)
+  const desk = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
+  expect(await desk.find({ type: 'Svg' })).toBeDefined()
+  expect((await desk.find({ type: 'Text', text: /cabo/ }))?.text).toBe('⚠ 1 cabo (1 alta)')
+  await desk.unmount()
+  const term = await $.ui.mount({ plugin: 'loose-ends', surface: 'terminal', ...BAND })
+  expect(await term.find({ type: 'Svg' })).toBeUndefined()
+  await term.unmount()
+})
+
+test('pane buttons change the file', async ($, on) => {
+  const w = world(on, { [PATH]: file })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  on('prompt.submit', ($: any, e: any) => ({ text: e.text }))
+  await w.start($)
+  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
+  await ui.press({ key: 'queue-a1' })
+  await w.clock.settle()
+  expect(w.saved().find((i: any) => i.id === 'a1').status).toBe('queued')
+  await ui.press({ key: 'dismiss-a1' })
+  await ui.redraw()
+  expect(await ui.find({ key: 'reason-a1' })).toBeDefined()
+  await ui.press({ key: 'done-a1' })
+  await w.clock.settle()
+  expect(w.saved().find((i: any) => i.id === 'a1')).toMatchObject({ status: 'done', closedBy: 'user' })
+  await ui.redraw()
+  await ui.press({ key: 'reopen-a1' })
+  await w.clock.settle()
+  expect(w.saved().find((i: any) => i.id === 'a1').status).toBe('open')
+  await ui.unmount()
+})
+
+test('Hazlo ahora submits a prompt and marks the item reminded', async ($, on) => {
+  const w = world(on, { [PATH]: file })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  let sent = ''
+  on('prompt.submit', ($: any, e: any) => { sent = e.text; return { text: e.text } })
+  await w.start($)
+  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
+  await ui.press({ key: 'now-a1' })
+  await w.clock.settle()
+  expect(sent).toContain('Resuelve este cabo suelto (a1)')
+  expect(w.saved().find((i: any) => i.id === 'a1')).toMatchObject({ status: 'queued' })
+  expect(w.saved().find((i: any) => i.id === 'a1').remindedAt).toBeTruthy()
+  await ui.unmount()
+})
+
+test('the mobile surface draws no pane', async ($, on) => {
+  const w = world(on, { [PATH]: file })
+  on('ui.render', () => ({ type: 'Text', children: ['engine pane'] }))
+  await w.start($)
+  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'mobile', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /engine pane/ })).toBeDefined()
+  expect(await ui.find({ key: 'queue-a1' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('/pendientes opens the pane', async ($, on) => {
+  const w = world(on)
+  let opened = ''
+  on('ui.open', ($: any, e: any) => { opened = e.id; return { value: { isPlaced: true } } })
+  await w.start($)
+  await $.command.run({ command: 'pendientes', args: '' })
+  expect(opened).toBe('loose-ends')
+})

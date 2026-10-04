@@ -1,7 +1,8 @@
-import { FILE, active, addItem, close, dueReminders, expireReminded, markReminded, parseFile, serialize } from '../lib/store.mjs'
-import { FLASH_MS, bashFailed, classifyBash, initialMood, moodReduce, planReduce } from '../lib/activity.mjs'
+import { FILE, active, addItem, close, counts, dueReminders, expireReminded, markReminded, parseFile, queue, reopen, serialize, setPriority } from '../lib/store.mjs'
+import { FLASH_MS, bashFailed, classifyBash, initialMood, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
-import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, formatContext, reminderText } from '../lib/prompts.mjs'
+import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
+import { PANE_ID, renderBand, renderPane } from '../lib/view.mjs'
 
 let items = []
 let fileError = null
@@ -12,6 +13,8 @@ let working = false
 let plan = []
 let mood = initialMood(0)
 let commits = []
+let discarding = null
+let showOthers = false
 
 async function projectRoot($) {
   if (!root) root = await $.session.root()
@@ -109,6 +112,42 @@ async function sweep($, answer) {
   }
 }
 
+function bandModel(now) {
+  return { mood: moodAt(mood, now), plan: planProgress(plan), counts: counts(items, branch), fileError }
+}
+
+function paneModel(now) {
+  const list = active(items)
+  const today = new Date(now).toDateString()
+  return {
+    now,
+    branch,
+    working,
+    fileError,
+    discarding,
+    showOthers,
+    plan: { items: plan, ...planProgress(plan) },
+    loose: list.filter(i => !i.branch || i.branch === branch),
+    others: list.filter(i => i.branch && i.branch !== branch),
+    closedToday: items.filter(i => (i.status === 'done' || i.status === 'dismissed') && i.closedAt && new Date(i.closedAt).toDateString() === today),
+    commits,
+  }
+}
+
+async function doNow($, id) {
+  if (working) return
+  const item = items.find(i => i.id === id)
+  if (!item) return
+  const now = await nowIso($)
+  await mutate($, list => markReminded(queue(list, id), [id], now))
+  await $.prompt.submit({ text: doNowText(item) })
+}
+
+async function closeAs($, id, status, reason) {
+  const now = await nowIso($)
+  await mutate($, list => close(list, id, { status, reason, closedBy: 'user', now }))
+}
+
 export function register(on) {
   on('session.start', async ($, e, next) => {
     root = null
@@ -187,5 +226,33 @@ export function register(on) {
     return due.length ? { ...r, block: reminderText(due) } : r
   })
 
-  on('command.run', { command: 'pendientes' }, async () => ({ text: 'loose-ends cargado' }))
+  on('command.run', { command: 'pendientes' }, async ($) => {
+    await $.ui.open({ id: 'loose-ends', title: 'Cuaderno' })
+    return {}
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
+    const el = $.ui.resolve(e)
+    const now = await $.clock.now()
+    return renderBand(el, e.surface, bandModel(now), {
+      openPane: () => { void $.ui.open({ id: 'loose-ends', title: 'Cuaderno' }) },
+    })
+  })
+
+  on('ui.render', { component: 'Pane', requestId: 'loose-ends' }, async ($, e, next) => {
+    if (e.surface === 'mobile') return next(e)
+    const el = $.ui.resolve(e)
+    const now = await $.clock.now()
+    return renderPane(el, paneModel(now), {
+      doNow: id => { void doNow($, id) },
+      queue: id => { void mutate($, list => queue(list, id)) },
+      done: id => { void closeAs($, id, 'done', undefined) },
+      startDiscard: id => { discarding = discarding === id ? null : id; $.ui.invalidate('ui.render') },
+      dismiss: (id, reason) => { discarding = null; void closeAs($, id, 'dismissed', reason) },
+      setPriority: (id, p) => { void mutate($, list => setPriority(list, id, p)) },
+      reopen: id => { void mutate($, list => reopen(list, id)) },
+      toggleOthers: () => { showOthers = !showOthers; $.ui.invalidate('ui.render') },
+    })
+  })
 }
