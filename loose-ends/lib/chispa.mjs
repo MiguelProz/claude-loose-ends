@@ -105,5 +105,5 @@ function extras(mood) {
 export function chispaSvg(mood) {
   const m = MOODS.includes(mood) ? mood : 'idle'
   const color = m === 'fail' ? PAL.fail : PAL.body
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W * C} ${H * C}" width="${W * C}" height="${H * C}" shape-rendering="crispEdges"><g>${motion(m)}${body(color)}${arms(m)}${eyes(m)}${mouth(m)}</g>${extras(m)}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W * C} ${H * C}" width="${W * C}" height="${H * C}" shape-rendering="crispEdges" style="color-scheme:light dark;background:transparent"><g>${motion(m)}${body(color)}${arms(m)}${eyes(m)}${mouth(m)}</g>${extras(m)}</svg>`
 }

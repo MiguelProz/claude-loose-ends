@@ -21,9 +21,9 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   viaja entre ordenadores y ramas.
 - **Banda** encima del prompt: una línea discreta con Chispa (animada en la app
   de escritorio, una cara de texto en la terminal), un resumen atenuado como
-  `3 pendientes (1 urgente) · plan 4/7` y el botón `Ver`. Sin nada que contar,
+  `3 pendientes (1 urgente) · plan 4/7` y el enlace `Ver`. Sin nada que contar,
   solo Chispa.
-- **Panel** (`/pendientes` o el botón `Ver`): pendientes, plan de la sesión y
+- **Panel** (`/pendientes` o el enlace `Ver`): pendientes, plan de la sesión y
   lo hecho hoy (plegado). Cada pendiente enseña `Hacer`, `Hecho` y `···`; este
   último despliega la evidencia, `Cola`, `Descartar` y la prioridad (`Urgente`,
   `Normal`, `Baja`). En la superficie `mobile` el panel no dibuja nada (no

@@ -30,16 +30,32 @@ export function bandLine({ plan, counts }) {
   return parts.join(' · ')
 }
 
+// The pane opens from a link inside the band's one line of text, so the band
+// stays a single native-looking row on the remote surfaces.
+export const OPEN_PANE_HREF = 'file:///loose-ends/ver'
+
 export function renderBand(el, surface, m, actions) {
-  const face =
-    surface === 'terminal'
-      ? el.Text({ dimColor: true, children: TERMINAL_FACES[m.mood] ?? TERMINAL_FACES.idle })
-      : el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 28, height: 24, isInteractive: true })
-  const children = [face]
-  const line = bandLine(m)
-  if (m.fileError) children.push(el.Text({ color: 'warning', dimColor: true, children: 'No puedo leer loose-ends.json' }))
-  else if (line) children.push(el.Text({ dimColor: true, children: line }))
-  if (m.fileError || line) children.push(el.Button({ key: 'open-pane', label: 'Ver', plain: true, dimColor: true, onPress: actions.openPane }))
+  const line = m.fileError ? 'No puedo leer loose-ends.json' : bandLine(m)
+  if (surface === 'terminal') {
+    const children = [el.Text({ dimColor: true, children: TERMINAL_FACES[m.mood] ?? TERMINAL_FACES.idle })]
+    if (line) {
+      children.push(el.Text({ dimColor: true, ...(m.fileError ? { color: 'warning' } : {}), children: line }))
+      children.push(el.Button({ key: 'open-pane', label: 'Ver', plain: true, dimColor: true, onPress: actions.openPane }))
+    }
+    return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
+  }
+  const children = [el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 24, height: 20, isInteractive: true })]
+  if (line) {
+    children.push(
+      el.Markdown({
+        key: 'open-pane',
+        dimColor: true,
+        text: `${line} · [Ver](${OPEN_PANE_HREF})`,
+        pressableLinks: [OPEN_PANE_HREF],
+        onLinkPress: () => actions.openPane(),
+      }),
+    )
+  }
   return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
 }
 

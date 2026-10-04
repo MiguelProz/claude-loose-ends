@@ -14,7 +14,7 @@ test('band: Chispa on desktop, face on terminal, counters for this branch', asyn
   await w.start($)
   const desk = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
   expect(await desk.find({ type: 'Svg' })).toBeDefined()
-  expect((await desk.find({ type: 'Text', text: /pendiente/ }))?.text).toBe('1 pendiente (1 urgente)')
+  expect((await desk.find({ key: 'open-pane' }))?.text).toBe('1 pendiente (1 urgente) · [Ver](file:///loose-ends/ver)')
   expect(await desk.find({ key: 'open-pane' })).toBeDefined()
   await desk.unmount()
   const term = await $.ui.mount({ plugin: 'loose-ends', surface: 'terminal', ...BAND })

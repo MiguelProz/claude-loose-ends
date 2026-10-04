@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { chispaSvg, MOOD_LABELS, MOODS, TERMINAL_FACES } from '../lib/chispa.mjs'
-import { ago, bandLine, renderBand, renderPane } from '../lib/view.mjs'
+import { ago, bandLine, OPEN_PANE_HREF, renderBand, renderPane } from '../lib/view.mjs'
 
 const fake = new Proxy({}, { get: (_, type) => (props: any) => ({ type, props }) }) as any
 const flat = (node: any): any[] => [node, ...([] as any[]).concat(node?.props?.children ?? []).flatMap(c => (typeof c === 'object' ? flat(c) : []))]
@@ -42,17 +42,28 @@ describe('band', () => {
   test('the line carries no glyphs', () => {
     expect(bandLine({ plan: { done: 4, total: 7 }, counts: { open: 3, high: 1, queued: 2 } })).not.toMatch(/[◐⚠⏳]/)
   })
-  test('one centered row: Chispa, one dim summary, a plain dim Ver button', () => {
+  test('desktop: one row, Chispa then one dim markdown line whose Ver link opens the pane', () => {
     const root = renderBand(fake, 'desktop', model, actions) as any
     expect(root.type).toBe('Box')
     expect(root.props).toMatchObject({ flexDirection: 'row', alignItems: 'center', gap: 1 })
-    expect(root.props.children.map((n: any) => n.type)).toEqual(['Svg', 'Text', 'Button'])
-    expect(root.props.children[1].props).toMatchObject({ dimColor: true, children: '3 pendientes (1 urgente) · plan 4/7' })
+    expect(root.props.children.map((n: any) => n.type)).toEqual(['Svg', 'Markdown'])
+    const md = root.props.children[1].props
+    expect(md).toMatchObject({ key: 'open-pane', dimColor: true, text: `3 pendientes (1 urgente) · plan 4/7 · [Ver](${OPEN_PANE_HREF})`, pressableLinks: [OPEN_PANE_HREF] })
+    let opened = 0
+    const counted = renderBand(fake, 'desktop', model, { ...actions, openPane: () => { opened++ } }) as any
+    counted.props.children[1].props.onLinkPress({ href: OPEN_PANE_HREF }, {})
+    expect(opened).toBe(1)
+  })
+  test('terminal keeps a dim face, the dim line and a plain Ver button', () => {
+    const root = renderBand(fake, 'terminal', model, actions) as any
+    expect(root.props.children.map((n: any) => n.type)).toEqual(['Text', 'Text', 'Button'])
     expect(root.props.children[2].props).toMatchObject({ key: 'open-pane', label: 'Ver', plain: true, dimColor: true })
   })
-  test('desktop draws an interactive 28x24 Svg, terminal a dim face', () => {
+  test('desktop draws an interactive 24x20 Svg on a transparent page, terminal a dim face', () => {
     const desk = flat(renderBand(fake, 'desktop', model, actions))
-    expect(desk.find(n => n.type === 'Svg')?.props).toMatchObject({ isInteractive: true, width: 28, height: 24 })
+    const svg = desk.find(n => n.type === 'Svg')?.props
+    expect(svg).toMatchObject({ isInteractive: true, width: 24, height: 20 })
+    expect(svg.source).toContain('color-scheme:light dark')
     const term = flat(renderBand(fake, 'terminal', model, actions))
     expect(term.some(n => n.type === 'Svg')).toBe(false)
     const face = term.find(n => n.type === 'Text')
@@ -63,15 +74,14 @@ describe('band', () => {
     for (const surface of ['desktop', 'terminal']) {
       const root = renderBand(fake, surface, empty, actions) as any
       expect(root.props.children).toHaveLength(1)
-      expect(flat(root).some(n => n.type === 'Button')).toBe(false)
+      expect(flat(root).some(n => n.type === 'Button' || n.type === 'Markdown')).toBe(false)
     }
     expect(flat(renderBand(fake, 'desktop', empty, actions)).some(n => n.type === 'Text')).toBe(false)
   })
   test('file error is one dim warning line plus Ver; the detail lives in the pane', () => {
     const root = renderBand(fake, 'desktop', { ...model, fileError: 'conflict', filePath: '/p/.claude/loose-ends.json' }, actions) as any
-    expect(root.props.children.map((n: any) => n.type)).toEqual(['Svg', 'Text', 'Button'])
-    expect(root.props.children[1].props).toMatchObject({ color: 'warning', dimColor: true, children: 'No puedo leer loose-ends.json' })
-    expect(root.props.children[2].props.key).toBe('open-pane')
+    expect(root.props.children.map((n: any) => n.type)).toEqual(['Svg', 'Markdown'])
+    expect(root.props.children[1].props).toMatchObject({ key: 'open-pane', text: `No puedo leer loose-ends.json · [Ver](${OPEN_PANE_HREF})` })
   })
 })
 
