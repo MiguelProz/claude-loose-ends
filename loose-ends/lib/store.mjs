@@ -4,13 +4,14 @@ const ACTIVE = new Set(['open', 'queued'])
 const RANK = { high: 0, medium: 1, low: 2 }
 
 export function normalize(text) {
-  return String(text)
+  const key = String(text)
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .replace(/\s+/g, '')
+  return key || String(text).trim().toLowerCase()
 }
 
 export function parseFile(text) {
@@ -82,10 +83,15 @@ export function expireReminded(items) {
   return items.map(i => (i.status === 'queued' && i.remindedAt ? { ...i, status: 'open', remindedAt: undefined } : i))
 }
 
+function created(item) {
+  const ms = Date.parse(item.createdAt)
+  return Number.isFinite(ms) ? ms : 0
+}
+
 export function active(items) {
   return items
     .filter(i => ACTIVE.has(i.status))
-    .sort((a, b) => (RANK[a.priority] ?? 1) - (RANK[b.priority] ?? 1) || Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    .sort((a, b) => (RANK[a.priority] ?? 1) - (RANK[b.priority] ?? 1) || created(a) - created(b))
 }
 
 export function counts(items, branch) {

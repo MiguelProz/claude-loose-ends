@@ -70,4 +70,10 @@ describe('pane', () => {
     expect(progressBar(1, 2, 10)).toBe('━━━━━░░░░░')
     expect(progressBar(0, 0, 4)).toBe('░░░░')
   })
+  test('ago gives nothing for unparseable dates; progressBar stays inside its width', () => {
+    expect(ago('ayer', now)).toBe('')
+    expect(ago(undefined as any, now)).toBe('')
+    expect(progressBar(5, 2, 4)).toBe('━━━━')
+    expect(progressBar(-1, 2, 4)).toBe('░░░░')
+  })
 })

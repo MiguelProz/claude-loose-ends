@@ -4,7 +4,10 @@ const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'])
 const FLASHES = { 'test-fail': 'fail', commit: 'celebrate', worry: 'worried' }
 
 export function planReduce(plan, ev) {
-  if (ev.kind === 'create') return [...plan.filter(t => t.id !== ev.id), { id: ev.id, subject: ev.subject, status: 'pending' }]
+  if (ev.kind === 'create') {
+    if (plan.some(t => t.id === ev.id)) return plan.map(t => (t.id === ev.id ? { ...t, subject: ev.subject } : t))
+    return [...plan, { id: ev.id, subject: ev.subject, status: 'pending' }]
+  }
   if (ev.kind === 'update') {
     return plan.map(t => (t.id === ev.id ? { ...t, ...(ev.status ? { status: ev.status } : {}), ...(ev.subject ? { subject: ev.subject } : {}) } : t))
   }
@@ -41,7 +44,7 @@ export function moodAt(s, now) {
 
 export function classifyBash(command, failed) {
   if (/\bgit\s+commit\b/.test(command)) return failed ? null : 'commit'
-  if (/\b(vitest|npm\s+(run\s+)?test|npx\s+vitest)\b/.test(command)) return failed ? 'test-fail' : null
+  if (/\bnpm\s+(run\s+)?test\b/.test(command) || /(?:^|[;&|])\s*(?:(?:npx|pnpm|yarn|bunx)\s+)?vitest(?![\w./-])/.test(command)) return failed ? 'test-fail' : null
   return null
 }
 

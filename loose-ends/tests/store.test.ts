@@ -40,6 +40,13 @@ describe('addItem', () => {
     expect(again.added).toBe(null)
     expect(addItem(items, base({ id: 'b2', text: 'Falta doc de jsonld.' })).added).toBe(null)
   })
+  test('text with no latin letters or digits dedupes on its own lowercased text', () => {
+    expect(normalize('🔥🔥')).toBe('🔥🔥')
+    expect(normalize(' 漢字 ')).toBe('漢字')
+    const { items } = addItem([], base({ text: '🔥🔥' }))
+    expect(addItem(items, base({ id: 'b2', text: '🚧🚧' })).added?.id).toBe('b2')
+    expect(addItem(items, base({ id: 'b3', text: ' 🔥🔥 ' })).added).toBe(null)
+  })
   test('a closed duplicate does not block a new one', () => {
     const { items } = addItem([], base())
     const closed = close(items, 'a1', { status: 'done', closedBy: 'user', now: NOW })
@@ -74,6 +81,11 @@ describe('transitions', () => {
 })
 
 describe('queries', () => {
+  test('active tolerates missing or invalid createdAt', () => {
+    const mk = (id: string, createdAt: any) => ({ id, text: id, priority: 'medium', status: 'open', branch: 'main', createdAt })
+    const list = [mk('late', '2026-10-04T10:00:00.000Z'), mk('none', undefined), mk('bad', 'ayer'), mk('early', '2026-10-01T00:00:00.000Z')]
+    expect(active(list).map(i => i.id)).toEqual(['none', 'bad', 'early', 'late'])
+  })
   test('active sorts by priority then age; counts by branch', () => {
     let list = addItem([], base({ id: 'l', text: 'baja', priority: 'low', now: '2026-10-01T00:00:00.000Z' })).items
     list = addItem(list, base({ id: 'h', text: 'alta', priority: 'high', branch: 'feat/x' })).items

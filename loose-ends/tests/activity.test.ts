@@ -10,6 +10,13 @@ describe('plan', () => {
     expect(plan[0]).toEqual({ id: '1', subject: 'jsonld', status: 'completed' })
     expect(planProgress(plan)).toEqual({ done: 1, total: 1 })
   })
+  test('creating an existing id keeps its place and status', () => {
+    let plan = planReduce([], { kind: 'create', id: '1', subject: 'jsonld' })
+    plan = planReduce(plan, { kind: 'create', id: '2', subject: 'tests' })
+    plan = planReduce(plan, { kind: 'update', id: '1', status: 'in_progress' })
+    plan = planReduce(plan, { kind: 'create', id: '1', subject: 'jsonld v2' })
+    expect(plan).toEqual([{ id: '1', subject: 'jsonld v2', status: 'in_progress' }, { id: '2', subject: 'tests', status: 'pending' }])
+  })
   test('TodoWrite replaces the plan', () => {
     const plan = planReduce([{ id: 'x', subject: 'old', status: 'pending' }], { kind: 'todos', todos: [{ content: 'a', status: 'completed' }, { content: 'b', status: 'in_progress' }] })
     expect(plan.map(t => t.subject)).toEqual(['a', 'b'])
@@ -62,6 +69,17 @@ describe('bash', () => {
     expect(classifyBash('npx vitest run src/a.test.ts', true)).toBe('test-fail')
     expect(classifyBash('npm run test -- foo', false)).toBe(null)
     expect(classifyBash('ls', true)).toBe(null)
+  })
+  test('vitest only counts as a command, not as a word in a path', () => {
+    expect(classifyBash('cat vitest.config.ts', true)).toBe(null)
+    expect(classifyBash('grep -r vitest package.json', true)).toBe(null)
+    expect(classifyBash('vitest run', true)).toBe('test-fail')
+    expect(classifyBash('cd app && vitest', true)).toBe('test-fail')
+    expect(classifyBash('lint; vitest run', true)).toBe('test-fail')
+    expect(classifyBash('lint || pnpm vitest', true)).toBe('test-fail')
+    expect(classifyBash('yarn vitest run', true)).toBe('test-fail')
+    expect(classifyBash('bunx vitest', true)).toBe('test-fail')
+    expect(classifyBash('npm run test', true)).toBe('test-fail')
   })
   test('detects failure from the result', () => {
     expect(bashFailed({ isError: true })).toBe(true)

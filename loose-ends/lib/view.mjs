@@ -1,6 +1,5 @@
 import { chispaSvg, MOOD_LABELS, TERMINAL_FACES } from './chispa.mjs'
 
-export const PANE_ID = 'loose-ends'
 export const DISMISS_REASONS = ['no aplica', 'ya estaba', '→ roadmap']
 const PRIORITY = {
   high: { label: 'ALTA', color: 'error' },
@@ -14,7 +13,9 @@ const PRIORITY_OPTIONS = [
 ]
 
 export function ago(iso, now) {
-  const min = Math.max(0, Math.round((now - Date.parse(iso)) / 60000))
+  const ms = now - Date.parse(iso)
+  if (!Number.isFinite(ms)) return ''
+  const min = Math.max(0, Math.round(ms / 60000))
   if (min < 1) return 'ahora'
   if (min < 60) return `hace ${min} min`
   const h = Math.round(min / 60)
@@ -24,7 +25,7 @@ export function ago(iso, now) {
 
 export function progressBar(done, total, width = 15) {
   if (!total) return '░'.repeat(width)
-  const filled = Math.round((done / total) * width)
+  const filled = Math.min(width, Math.max(0, Math.round((done / total) * width)))
   return '━'.repeat(filled) + '░'.repeat(width - filled)
 }
 
