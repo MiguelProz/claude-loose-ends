@@ -416,3 +416,83 @@ test('a file path given as repo resolves through its folder', async ($, on) => {
   expect(w.runs.filter(a => a.includes('--show-toplevel')).map(a => a[2])).toContain('/other/src/a.ts')
   expect(w.writes).toEqual([OTHER])
 })
+
+test('a Claude Code worktree under .claude is a valid session repo, target and touched repo', async ($, on) => {
+  const wt = '/proj/.claude/worktrees/x'
+  const w = world(on, {}, { repos: { '/proj': '/proj', [wt]: wt, '/other/.claude/worktrees/y': '/other/.claude/worktrees/y' }, root: wt })
+  let asked = ''
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo del worktree ajeno","priority":"low","repo":"/other/.claude/worktrees/y"}],"resolved":[]}') })
+  tools(on)
+  turns(on)
+  await w.start($)
+  await $.tool.call({ tool: TOOL, text: 'Cabo en el worktree', priority: 'low' })
+  await $.tool.call({ tool: TOOL, text: 'Cabo por ruta', priority: 'low', repo: '/other/.claude/worktrees/y/src' })
+  await startTurn($)
+  await $.tool.call({ tool: 'Edit', file_path: '/other/.claude/worktrees/y/a.ts' })
+  await endTurn($)
+  await w.clock.settle()
+  expect(asked).toContain('- y: /other/.claude/worktrees/y')
+  expect(w.savedAt(`${wt}/.claude/loose-ends.json`).map((i: any) => i.text)).toEqual(['Cabo en el worktree'])
+  expect(w.savedAt('/other/.claude/worktrees/y/.claude/loose-ends.json').map((i: any) => i.text)).toEqual(['Cabo por ruta', 'Cabo del worktree ajeno'])
+})
+
+test('with HOME unknown a plugin repo under .claude/plugins is still ignored', async ($, on) => {
+  const w = world(on, {}, { repos: { ...REPOS, [plugin]: plugin }, home: null })
+  await w.start($)
+  const r = await $.tool.call({ tool: TOOL, text: 'Cabo del plugin', priority: 'low', repo: plugin })
+  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+})
+
+const WIN = 'C:/Users/x/proj'
+const WIN_OTHER = 'C:/Users/x/other'
+
+test('Windows: a drive-letter session repo and touched repo, HOME from USERPROFILE', async ($, on) => {
+  const w = world(on, {}, { repos: { [WIN]: WIN, [WIN_OTHER]: WIN_OTHER, 'C:/Users/x': 'C:/Users/x' }, root: 'C:\\Users\\x\\proj\\src', home: null, userProfile: 'C:\\Users\\x' })
+  let asked = ''
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","repo":"C:/Users/x/other"},{"text":"Cabo para la sesión","priority":"low"}],"resolved":[]}') })
+  tools(on)
+  turns(on)
+  await w.start($)
+  await startTurn($)
+  await $.tool.call({ tool: 'Edit', file_path: 'C:\\Users\\x\\other\\a.ts' })
+  await endTurn($)
+  await w.clock.settle()
+  expect(asked).toContain(`Repos candidatos:\n- proj: ${WIN}\n- other: ${WIN_OTHER}`)
+  expect(w.savedAt(`${WIN}/.claude/loose-ends.json`).map((i: any) => i.text)).toEqual(['Cabo para la sesión'])
+  expect(w.savedAt(`${WIN_OTHER}/.claude/loose-ends.json`).map((i: any) => i.text)).toEqual(['Cabo para el otro'])
+  const r = await $.tool.call({ tool: TOOL, text: 'Cabo por ruta', priority: 'low', repo: 'C:\\Users\\x\\other\\src\\b.ts' })
+  expect(String(r.result)).toMatch(/^Apuntado/)
+  expect(w.writes.every((p: string) => !p.includes('\\'))).toBe(true)
+})
+
+test('Windows: the home directory as a repo is outside git', async ($, on) => {
+  const w = world(on, {}, { repos: { 'C:/Users/x': 'C:/Users/x' }, root: 'C:\\Users\\x\\work', home: null, userProfile: 'C:\\Users\\x' })
+  await w.start($)
+  const r = await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low' })
+  expect(String(r.result)).toContain('no está en un repo git')
+  expect(w.writes).toEqual([])
+})
+
+test('an unreadable session file is named by its absolute path in the band', async ($, on) => {
+  const w = world(on, { [PATH]: '{ roto' }, { repos: REPOS })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  await w.start($)
+  const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
+  expect((await band.find({ type: 'Text', text: /ilegibles/ }))?.text).toContain(`revisa ${PATH}`)
+  await band.unmount()
+})
+
+test('leaving git after a turn empties the band and the context', async ($, on) => {
+  const w = world(on, { [PATH]: own }, { repos: REPOS })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
+  turns(on)
+  await w.start($)
+  w.setRoot('/home/m')
+  await endTurn($)
+  await w.clock.settle()
+  const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
+  expect(await band.find({ type: 'Text', text: /cabo/ })).toBeUndefined()
+  expect((await $.prompt.context({ blocks: [] })).blocks).toEqual([])
+  await band.unmount()
+})

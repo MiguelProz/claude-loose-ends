@@ -45,6 +45,8 @@ describe('band', () => {
   test('file error replaces the counters', () => {
     const nodes = flat(renderBand(fake, 'desktop', { ...model, fileError: 'conflict' }, actions))
     expect(nodes.some(n => n.type === 'Text' && String(n.props.children).includes('ilegibles'))).toBe(true)
+    const named = flat(renderBand(fake, 'desktop', { ...model, fileError: 'conflict', filePath: '/p/.claude/loose-ends.json' }, actions))
+    expect(named.some(n => n.type === 'Text' && String(n.props.children).includes('revisa /p/.claude/loose-ends.json'))).toBe(true)
   })
 })
 
@@ -63,6 +65,7 @@ describe('pane', () => {
   test('a file error shows a banner in the pane', () => {
     expect(texts(flat(renderPane(fake, { ...base, fileError: 'json' }, actions))).some(t => t.includes('No puedo leer') && t.includes('(json)'))).toBe(true)
     expect(texts(flat(renderPane(fake, base, actions))).some(t => t.includes('No puedo leer'))).toBe(false)
+    expect(texts(flat(renderPane(fake, { ...base, fileError: 'json', filePath: '/p/.claude/loose-ends.json' }, actions))).some(t => t.includes('No puedo leer /p/.claude/loose-ends.json (json)'))).toBe(true)
   })
   test('other branches sit behind a toggle', () => {
     const other = { ...item, id: 'b2', text: 'Otra rama', branch: 'feat/x' }

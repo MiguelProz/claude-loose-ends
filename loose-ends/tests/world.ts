@@ -17,7 +17,12 @@ type Opts = {
   missing?: string[]
   // $HOME; null for unset
   home?: string | null
+  // %USERPROFILE%, for when HOME is unset (Windows)
+  userProfile?: string
 }
+
+// The test host runs on POSIX and resolves a drive-letter path against its cwd before the stub sees it; undo that.
+const fsKey = (path: string) => path.replace(/^.*?\/(?=[A-Za-z]:\/)/, '')
 
 export function world(on: any, files: Record<string, string> = {}, opts: Opts = {}) {
   let branch = opts.branch ?? 'main'
@@ -41,18 +46,18 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
     return key === undefined ? null : repos[key]
   }
   on('session.root', () => ({ value: root }))
-  on('env.get', () => ({ value: opts.home === null ? undefined : opts.home ?? '/Users/m' }))
+  on('env.get', ($: any, e: any) => ({ value: e.name === 'USERPROFILE' ? opts.userProfile : opts.home === null ? undefined : opts.home ?? '/Users/m' }))
   on('session.usage', () => ({ value: { startedAt: opts.startedAt ?? clock.now(), context: { tokens: 0, window: 200000, percent: 0 }, rateLimits: [] } }))
-  on('fs.exists', ($: any, e: any) => { reads.push(e.path); return { value: e.path in fs } })
-  on('fs.read', ($: any, e: any) => { reads.push(e.path); return { value: fs[e.path] } })
-  on('fs.write', ($: any, e: any) => { if (flags.failWrites) throw new Error('disco lleno'); writes.push(e.path); fs[e.path] = e.text; return { value: undefined } })
+  on('fs.exists', ($: any, e: any) => { reads.push(fsKey(e.path)); return { value: fsKey(e.path) in fs } })
+  on('fs.read', ($: any, e: any) => { reads.push(fsKey(e.path)); return { value: fs[fsKey(e.path)] } })
+  on('fs.write', ($: any, e: any) => { if (flags.failWrites) throw new Error('disco lleno'); writes.push(fsKey(e.path)); fs[fsKey(e.path)] = e.text; return { value: undefined } })
   on('process.run', ($: any, e: any) => {
     runs.push(e.argv)
     if (flags.throwGit) throw new Error('git no arranca')
     const result = (exitCode: number, stdout: string | undefined) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
     if (flags.failGit) return result(0, undefined)
     const dashC = e.argv[1] === '-C'
-    const dir = dashC ? e.argv[2] : e.init?.cwd ?? root
+    const dir = String(dashC ? e.argv[2] : e.init?.cwd ?? root).replace(/\\/g, '/')
     const args = dashC ? e.argv.slice(3) : e.argv.slice(1)
     const top = topOf(dir)
     if (top === null) return result(128, '')

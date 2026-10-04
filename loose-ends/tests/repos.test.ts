@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { FILE_TOOLS, candidatePaths, isIgnoredRepo, candidateRepos, formatCandidates, repoName } from '../lib/repos.mjs'
+import { FILE_TOOLS, candidatePaths, isAbsolutePath, isIgnoredRepo, candidateRepos, formatCandidates, normalizePath, parentPath, repoName } from '../lib/repos.mjs'
 
 describe('candidatePaths: file tools', () => {
   test('Edit, Write, MultiEdit and Read use file_path', () => {
@@ -74,10 +74,26 @@ describe('candidatePaths: Bash', () => {
 })
 
 describe('isIgnoredRepo', () => {
-  test('a toplevel with a .claude segment is ignored', () => {
+  test('with HOME known: HOME itself and anything under HOME/.claude are ignored', () => {
     expect(isIgnoredRepo('/Users/m/.claude/plugins/cache/x', '/Users/m')).toBe(true)
     expect(isIgnoredRepo('/Users/m/.claude', '/Users/m')).toBe(true)
+    expect(isIgnoredRepo('/Users/m/.claude/', '/Users/m')).toBe(true)
+  })
+  test('a worktree of Claude Code inside a repo is a real repo', () => {
+    expect(isIgnoredRepo('/proj/.claude/worktrees/x', '/Users/m')).toBe(false)
+    expect(isIgnoredRepo('/proj/.claude/worktrees/x', null)).toBe(false)
+    expect(isIgnoredRepo('/Users/m/dev/web-app/.claude/worktrees/x', '/Users/m')).toBe(false)
+  })
+  test('with HOME unknown: only plugin folders under .claude and a trailing .claude', () => {
+    expect(isIgnoredRepo('/Users/m/.claude/plugins/cache/x', null)).toBe(true)
     expect(isIgnoredRepo('/Users/m/.claude/', null)).toBe(true)
+    expect(isIgnoredRepo('/Users/m/.claude/skills/x', null)).toBe(false)
+  })
+  test('Windows paths: HOME, its .claude, case-insensitive drive, backslashes', () => {
+    expect(isIgnoredRepo('C:/Users/x', 'C:\\Users\\x')).toBe(true)
+    expect(isIgnoredRepo('c:/users/x/.claude/plugins/p', 'C:/Users/x')).toBe(true)
+    expect(isIgnoredRepo('C:\\Users\\x\\.claude\\plugins\\p', null)).toBe(true)
+    expect(isIgnoredRepo('C:/Users/x/proj', 'C:/Users/x')).toBe(false)
   })
   test('the home directory itself is ignored, with or without a trailing slash', () => {
     expect(isIgnoredRepo('/Users/m', '/Users/m')).toBe(true)
@@ -89,6 +105,7 @@ describe('isIgnoredRepo', () => {
     expect(isIgnoredRepo('/Users/m', null)).toBe(false)
     expect(isIgnoredRepo('/Users/m/my.claude/x', '/Users/m')).toBe(false)
     expect(isIgnoredRepo('/Users/m/.claudex', '/Users/m')).toBe(false)
+    expect(isIgnoredRepo('/Users/m/.claudex/plugins/x', null)).toBe(false)
   })
 })
 
@@ -105,5 +122,46 @@ describe('repo lists', () => {
   })
   test('formatCandidates lists basename and absolute path', () => {
     expect(formatCandidates(['/Users/m/web-app', '/Users/m/api'])).toBe('- web-app: /Users/m/web-app\n- api: /Users/m/api')
+  })
+})
+
+describe('Windows paths', () => {
+  test('normalizePath, isAbsolutePath, parentPath', () => {
+    expect(normalizePath('C:\\Users\\x\\proj\\')).toBe('C:/Users/x/proj')
+    expect(normalizePath('C:\\')).toBe('C:/')
+    expect(normalizePath('/a/b//')).toBe('/a/b')
+    expect(normalizePath('/')).toBe('/')
+    expect(isAbsolutePath('C:\\a')).toBe(true)
+    expect(isAbsolutePath('d:/a')).toBe(true)
+    expect(isAbsolutePath('/a')).toBe(true)
+    expect(isAbsolutePath('src\\a.ts')).toBe(false)
+    expect(isAbsolutePath('C:a')).toBe(false)
+    expect(isAbsolutePath(undefined)).toBe(false)
+    expect(parentPath('C:/Users/x')).toBe('C:/Users')
+    expect(parentPath('C:/Users')).toBe('C:/')
+    expect(parentPath('C:/')).toBe('C:/')
+    expect(parentPath('/a')).toBe('/')
+    expect(parentPath('/')).toBe('/')
+  })
+  test('file tools accept both separators and come out with forward slashes', () => {
+    expect(candidatePaths('Edit', { file_path: 'C:\\Users\\x\\proj\\a.ts' })).toEqual(['C:/Users/x/proj/a.ts'])
+    expect(candidatePaths('Read', { file_path: 'C:/Users/x/proj/a.ts' })).toEqual(['C:/Users/x/proj/a.ts'])
+    expect(candidatePaths('Grep', { path: 'D:\\src\\' })).toEqual(['D:/src'])
+    expect(candidatePaths('Read', { file_path: 'src\\a.ts' })).toEqual([])
+  })
+  test('Bash: cd, git -C and bare tokens with a drive letter', () => {
+    expect(candidatePaths('Bash', { command: 'cd C:\\Users\\x\\other && npm test' })).toEqual(['C:/Users/x/other'])
+    expect(candidatePaths('Bash', { command: 'cd /d D:\\work' })).toEqual(['D:/work'])
+    expect(candidatePaths('Bash', { command: 'git -C "C:\\my repo\\app" status' })).toEqual(['C:/my repo/app'])
+    expect(candidatePaths('Bash', { command: 'git -C C:/Users/x/other log' })).toEqual(['C:/Users/x/other'])
+    expect(candidatePaths('Bash', { command: 'type C:\\Users\\x\\file.txt' })).toEqual(['C:/Users/x/file.txt'])
+    expect(candidatePaths('Bash', { command: 'tool --out=C:\\Users\\x\\out' })).toEqual(['C:/Users/x/out'])
+  })
+  test('a single-segment bare Windows token is not a path, an explicit target is', () => {
+    expect(candidatePaths('Bash', { command: 'dir C:\\Users' })).toEqual([])
+    expect(candidatePaths('Bash', { command: 'cd C:\\Users' })).toEqual(['C:/Users'])
+  })
+  test('POSIX escapes still work outside drive paths', () => {
+    expect(candidatePaths('Bash', { command: 'cat /a/b\\ c/d.txt' })).toEqual(['/a/b c/d.txt'])
   })
 })

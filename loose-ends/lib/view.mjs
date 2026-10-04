@@ -47,7 +47,7 @@ export function renderBand(el, surface, m, actions) {
       : el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 48, height: 40, isInteractive: true })
   const children = [face]
   const line = bandLine(m)
-  if (m.fileError) children.push(el.Text({ color: 'warning', children: `pendientes ilegibles (${m.fileError}): revisa .claude/loose-ends.json` }))
+  if (m.fileError) children.push(el.Text({ color: 'warning', children: `pendientes ilegibles (${m.fileError}): revisa ${m.filePath ?? '.claude/loose-ends.json'}` }))
   else if (line) children.push(el.Text({ children: line }))
   children.push(el.Button({ key: 'open-pane', label: 'ver', dimColor: true, onPress: actions.openPane }))
   return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
@@ -90,7 +90,7 @@ function itemRow(el, item, m, actions) {
 export function renderPane(el, m, actions) {
   const title = text => el.Text({ bold: true, children: text })
   const out = []
-  if (m.fileError) out.push(el.Text({ color: 'warning', children: `No puedo leer .claude/loose-ends.json (${m.fileError}). Arréglalo y el panel se recupera solo.` }))
+  if (m.fileError) out.push(el.Text({ color: 'warning', children: `No puedo leer ${m.filePath ?? '.claude/loose-ends.json'} (${m.fileError}). Arréglalo y el panel se recupera solo.` }))
 
   out.push(title(`EN CURSO  ${progressBar(m.plan.done, m.plan.total)}  ${m.plan.done}/${m.plan.total}`))
   const tasks = m.plan.items.filter(t => t.status !== 'deleted')

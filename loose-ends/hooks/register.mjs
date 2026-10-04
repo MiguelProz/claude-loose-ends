@@ -2,7 +2,7 @@ import { FILE, active, addItem, close, counts, dueReminders, expireReminded, mar
 import { FLASH_MS, bashFailed, classifyBash, initialMood, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
 import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
-import { FILE_TOOLS, candidatePaths, candidateRepos, isIgnoredRepo, repoName } from '../lib/repos.mjs'
+import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, repoName } from '../lib/repos.mjs'
 import { renderBand, renderPane } from '../lib/view.mjs'
 
 const NO_GIT_NOTE = 'Esta sesión no está en un repo git: indica "repo" con la ruta del repo del cabo.'
@@ -133,20 +133,16 @@ async function toplevelOf($, dir) {
   const r = await $.process.run(['git', '-C', dir, 'rev-parse', '--show-toplevel'])
   if (r.exitCode !== 0) return null
   const top = typeof r.stdout === 'string' ? r.stdout.trim() : ''
-  if (!top.startsWith('/')) throw new Error('git no dio la raíz del repo')
-  return top
-}
-
-function parentDir(dir) {
-  return dir.slice(0, dir.lastIndexOf('/')) || '/'
+  if (!isAbsolutePath(top)) throw new Error('git no dio la raíz del repo')
+  return normalizePath(top)
 }
 
 // Toplevel of the git repo a path belongs to, or null (also when git cannot run). A file path starts at its
 // directory; anything else starts at itself. Climbs a few levels for folders that do not exist yet.
 async function repoOf($, path, { file = false, fresh = false } = {}) {
-  if (typeof path !== 'string' || !path.startsWith('/')) return null
-  let dir = path.length > 1 ? path.replace(/\/+$/, '') : path
-  if (file) dir = parentDir(dir)
+  if (!isAbsolutePath(path)) return null
+  let dir = normalizePath(path)
+  if (file) dir = parentPath(dir)
   const tried = []
   for (let depth = 0; depth < MAX_WALK; depth++) {
     if (fresh) repoCache.delete(dir)
@@ -165,7 +161,7 @@ async function repoOf($, path, { file = false, fresh = false } = {}) {
       return isIgnoredRepo(top, await homeDir($)) ? null : top
     }
     tried.push(dir)
-    const parent = parentDir(dir)
+    const parent = parentPath(dir)
     if (parent === dir) return null
     dir = parent
   }
@@ -175,7 +171,8 @@ async function repoOf($, path, { file = false, fresh = false } = {}) {
 async function homeDir($) {
   if (homePath === undefined) {
     try {
-      homePath = (await $.env.get('HOME')) ?? null
+      const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
+      homePath = home ? normalizePath(home) : null
     } catch {
       homePath = null
     }
@@ -186,11 +183,20 @@ async function homeDir($) {
 // The session's repo from its root, read afresh; throws when git cannot say, so callers keep the last answer.
 // A repo under `.claude` or the home directory counts as no repo.
 async function resolveSessionRepo($) {
-  const root = await projectRoot($)
+  const session = await projectRoot($)
+  const root = isAbsolutePath(session) ? normalizePath(session) : session
   repoCache.delete(root)
   const top = await toplevelOf($, root)
   repoCache.set(root, top)
+  const before = sessionRepo
   sessionRepo = top && !isIgnoredRepo(top, await homeDir($)) ? top : null
+  if (sessionRepo !== before) {
+    // nothing of the old repo may be drawn while the new one loads
+    items = []
+    fileError = null
+    discarding = null
+    $.ui.invalidate('ui.render')
+  }
 }
 
 // On the write chain, so a write never straddles a change of session repo.
@@ -214,12 +220,12 @@ async function readBranch($) {
 async function note($, input, target) {
   const now = await nowIso($)
   const noteBranch = await branchOf($, target)
-  if (target === sessionRepo) branch = noteBranch
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const report = {}
   let wasSession = false
   const res = await mutate($, (list, isSession) => {
     wasSession = isSession
+    if (isSession) branch = noteBranch
     return addItem(list, { ...input, id, branch: noteBranch, now })
   }, target, report)
   if (res && res.added) $.ui.toast(wasSession ? `Cabo suelto: ${res.added.text}` : `Cabo suelto (${repoName(target)}): ${res.added.text}`)
@@ -295,7 +301,7 @@ async function sweep($, answer, touchedNow) {
 }
 
 function bandModel(now) {
-  return { mood: moodAt(mood, now), plan: planProgress(plan), counts: counts(items, branch), fileError }
+  return { mood: moodAt(mood, now), plan: planProgress(plan), counts: counts(items, branch), fileError, filePath: sessionRepo ? `${sessionRepo}/${FILE}` : FILE }
 }
 
 function paneModel(now) {
@@ -306,6 +312,7 @@ function paneModel(now) {
     branch,
     working,
     fileError,
+    filePath: sessionRepo ? `${sessionRepo}/${FILE}` : FILE,
     noRepo: sessionRepo === null,
     discarding,
     showOthers,
