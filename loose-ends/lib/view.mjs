@@ -44,7 +44,7 @@ export function renderBand(el, surface, m, actions) {
     }
     return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
   }
-  const children = [el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 24, height: 20, isInteractive: true })]
+  const children = [el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 24, height: 20 })]
   if (line) {
     children.push(
       el.Markdown({

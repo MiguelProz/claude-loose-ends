@@ -59,10 +59,11 @@ describe('band', () => {
     expect(root.props.children.map((n: any) => n.type)).toEqual(['Text', 'Text', 'Button'])
     expect(root.props.children[2].props).toMatchObject({ key: 'open-pane', label: 'Ver', plain: true, dimColor: true })
   })
-  test('desktop draws an interactive 24x20 Svg on a transparent page, terminal a dim face', () => {
+  test('desktop draws Chispa as a plain 24x20 image (transparent), terminal a dim face, terminal a dim face', () => {
     const desk = flat(renderBand(fake, 'desktop', model, actions))
     const svg = desk.find(n => n.type === 'Svg')?.props
-    expect(svg).toMatchObject({ isInteractive: true, width: 24, height: 20 })
+    expect(svg).toMatchObject({ width: 24, height: 20 })
+    expect(svg.isInteractive).toBeUndefined()
     expect(svg.source).toContain('color-scheme:light dark')
     const term = flat(renderBand(fake, 'terminal', model, actions))
     expect(term.some(n => n.type === 'Svg')).toBe(false)
