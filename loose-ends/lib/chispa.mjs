@@ -1,0 +1,109 @@
+const C = 4
+const W = 24
+const H = 20
+const INK = '#2B2B2B'
+const PAL = { body: '#D97757', fail: '#C2413A', arm: '#B85F43', green: '#4ADE80', key: '#4B5058', bubble: '#F4F1EA', grey: '#9AA0A6', blue: '#8AA4FF', drop: '#7CC4F8', amber: '#F5C542' }
+const CONFETTI = ['#E5484D', '#F5C542', '#4ADE80', '#60A5FA', '#D97757']
+
+export const MOODS = ['idle', 'coding', 'talking', 'thinking', 'sleeping', 'fail', 'celebrate', 'worried']
+
+export const MOOD_LABELS = {
+  idle: 'Chispa esperando',
+  coding: 'Chispa programando',
+  talking: 'Chispa hablando',
+  thinking: 'Chispa pensando',
+  sleeping: 'Chispa durmiendo',
+  fail: 'Chispa con los tests en rojo',
+  celebrate: 'Chispa celebrando un commit',
+  worried: 'Chispa preocupada por un cabo suelto',
+}
+
+export const TERMINAL_FACES = {
+  idle: '(•ᴗ•)',
+  coding: '(•̀ᴗ•́)⌨',
+  talking: '(•o•)…',
+  thinking: '(•_•)?',
+  sleeping: '(-_-)zᶻ',
+  fail: '(×_×);',
+  celebrate: '\\(•ᴗ•)/',
+  worried: '(•_•)!',
+}
+
+const cells = (...v) => v.map(n => n * C).join(';')
+const anim = (attr, values, dur, begin = 0) => `<animate attributeName="${attr}" values="${values}" dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/>`
+const shift = (values, dur) => `<animateTransform attributeName="transform" type="translate" values="${values}" dur="${dur}s" repeatCount="indefinite"/>`
+const BLINK = `<animate attributeName="height" values="${cells(2, 2, 0.5, 2)}" keyTimes="0;0.92;0.96;1" dur="3.2s" repeatCount="indefinite"/>`
+
+function px(x, y, w, h, fill, inner = '') {
+  const a = `x="${x * C}" y="${y * C}" width="${w * C}" height="${h * C}" fill="${fill}"`
+  return inner ? `<rect ${a}>${inner}</rect>` : `<rect ${a}/>`
+}
+
+function body(color) {
+  return [px(6, 7, 12, 8, color), px(5, 8, 1, 5, color), px(18, 8, 1, 5, color), ...[7, 10, 13, 16].map(x => px(x, 15, 1, 2, color))].join('')
+}
+
+function motion(mood) {
+  if (mood === 'idle') return shift(`0 0;0 ${-C};0 0`, 2)
+  if (mood === 'talking') return shift(`0 0;0 ${-C / 2};0 0`, 1)
+  if (mood === 'sleeping') return shift(`0 0;0 ${C / 2};0 0`, 2.4)
+  if (mood === 'fail') return shift('0 0;3 0;0 0;-3 0;0 0', 0.25)
+  if (mood === 'celebrate') return shift(`0 0;0 ${-3 * C};0 0`, 0.5)
+  return ''
+}
+
+function eyes(mood) {
+  if (mood === 'sleeping') return px(9, 10, 2, 1, INK) + px(14, 10, 2, 1, INK)
+  if (mood === 'thinking') return px(10, 8, 1, 2, INK) + px(15, 8, 1, 2, INK)
+  if (mood === 'fail') return px(9, 9, 1, 2, INK) + px(14, 9, 1, 2, INK)
+  return px(9, 9, 1, 2, INK, BLINK) + px(14, 9, 1, 2, INK, BLINK)
+}
+
+function mouth(mood) {
+  if (mood === 'talking') return px(11, 12, 2, 1, INK, anim('height', cells(1, 2, 1), 0.25))
+  if (mood === 'celebrate') return px(10, 13, 4, 1, INK) + px(9, 12, 1, 1, INK) + px(14, 12, 1, 1, INK)
+  if (mood === 'fail') return px(11, 12, 2, 2, INK)
+  if (mood === 'worried') return px(11, 13, 2, 1, INK)
+  return ''
+}
+
+function arms(mood) {
+  return [4, 19]
+    .map((x, k) => {
+      if (mood === 'coding') return px(x, 10, 1, 2, PAL.arm, anim('y', cells(10, 11, 10), 0.2, k * 0.1))
+      if (mood === 'celebrate') return px(x, 6, 1, 2, PAL.arm)
+      return px(x, 10, 1, 2, PAL.arm)
+    })
+    .join('')
+}
+
+function extras(mood) {
+  if (mood === 'coding') {
+    const bits = [0, 1, 2, 3].map(k => px(3 + k * 5, 14, 1, 1, PAL.green, anim('y', cells(14, 2), 1.2, k * 0.3) + anim('opacity', '1;0', 1.2, k * 0.3)))
+    return px(5, 15, 14, 2, PAL.key) + px(6, 15, 1, 1, PAL.green, anim('x', cells(6, 17), 1)) + bits.join('')
+  }
+  if (mood === 'talking') {
+    const dots = [0, 1, 2].map(k => px(18 + k * 2, 3, 1, 1, INK, anim('opacity', '0;1;1;0', 1.2, k * 0.3)))
+    return px(16, 0, 8, 6, PAL.grey) + px(17, 1, 6, 4, PAL.bubble) + px(16, 6, 1, 1, PAL.grey) + dots.join('')
+  }
+  if (mood === 'thinking') {
+    return [[16, 5, 1], [18, 3, 1], [20, 0, 2]].map(([x, y, s], k) => px(x, y, s, s, PAL.grey, anim('opacity', '0;1;1;0', 1.6, k * 0.4))).join('')
+  }
+  if (mood === 'sleeping') {
+    return [0, 1, 2]
+      .map(k => `<text x="${(17 + k * 1.5) * C}" y="${9 * C}" font-family="monospace" font-weight="bold" font-size="13" fill="${PAL.blue}">z${anim('y', cells(9, 1), 2.4, k * 0.8)}${anim('opacity', '1;0', 2.4, k * 0.8)}</text>`)
+      .join('')
+  }
+  if (mood === 'fail') return px(20, 4, 1, 2, PAL.drop, anim('y', cells(4, 9), 0.8) + anim('opacity', '1;0', 0.8))
+  if (mood === 'celebrate') {
+    return Array.from({ length: 12 }, (_, k) => px((k * 7 + 3) % W, 0, 1, 1, CONFETTI[k % 5], anim('y', cells(-1, H), 1.2 + (k % 3) * 0.3, k * 0.1))).join('')
+  }
+  if (mood === 'worried') return px(20, 1, 1, 3, PAL.amber, anim('opacity', '1;0.2;1', 0.6)) + px(20, 5, 1, 1, PAL.amber)
+  return ''
+}
+
+export function chispaSvg(mood) {
+  const m = MOODS.includes(mood) ? mood : 'idle'
+  const color = m === 'fail' ? PAL.fail : PAL.body
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W * C} ${H * C}" width="${W * C}" height="${H * C}" shape-rendering="crispEdges"><g>${motion(m)}${body(color)}${arms(m)}${eyes(m)}${mouth(m)}</g>${extras(m)}</svg>`
+}
