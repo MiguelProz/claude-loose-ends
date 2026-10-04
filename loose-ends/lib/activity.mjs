@@ -25,7 +25,10 @@ export function moodReduce(s, ev, now) {
   const touched = { ...s, lastActivity: now }
   if (ev.type === 'turn.start') return { ...touched, base: 'thinking', working: true }
   if (ev.type === 'tool') return { ...touched, base: EDIT_TOOLS.has(ev.tool) ? 'coding' : 'thinking' }
-  if (ev.type === 'turn.end') return { ...touched, base: 'idle', working: false, flash: 'talking', flashUntil: now + FLASH_MS }
+  if (ev.type === 'turn.end') {
+    if (s.flash && s.flash !== 'talking' && now < s.flashUntil) return { ...touched, base: 'idle', working: false }
+    return { ...touched, base: 'idle', working: false, flash: 'talking', flashUntil: now + FLASH_MS }
+  }
   if (FLASHES[ev.type]) return { ...touched, flash: FLASHES[ev.type], flashUntil: now + FLASH_MS }
   return s
 }
@@ -44,5 +47,5 @@ export function classifyBash(command, failed) {
 
 export function bashFailed(result) {
   if (!result) return false
-  return result.isError === true || /\b\d+ failed\b/i.test(result.text ?? '')
+  return result.isError === true || /\b[1-9]\d* failed\b/i.test(result.text ?? '')
 }

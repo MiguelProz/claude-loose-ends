@@ -23,6 +23,7 @@ export function parseFile(text) {
     return { ok: false, error: 'json' }
   }
   if (!data || !Array.isArray(data.items)) return { ok: false, error: 'shape' }
+  if (!data.items.every(i => i && typeof i === 'object' && typeof i.id === 'string')) return { ok: false, error: 'shape' }
   return { ok: true, items: data.items }
 }
 

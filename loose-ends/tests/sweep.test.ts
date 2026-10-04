@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { buildSweepPrompt, MIN_ANSWER, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
-import { doNowText, formatContext, reminderText, TOOL_ID, TOOL_SCHEMA } from '../lib/prompts.mjs'
+import { SWEEP_SYSTEM, doNowText, formatContext, reminderText, TOOL_ID, TOOL_SCHEMA } from '../lib/prompts.mjs'
 
 const item = (over = {}) => ({ id: 'a1', text: 'Tipar team-drafts', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T10:00:00.000Z', ...over })
 
@@ -14,6 +14,10 @@ describe('sweep', () => {
     const p = buildSweepPrompt('respuesta', [item()])
     expect(p).toContain('a1: Tipar team-drafts')
     expect(p).toContain('<<<\nrespuesta\n>>>')
+  })
+  test('system prompt forbids re-reporting open items', () => {
+    expect(SWEEP_SYSTEM).toContain('No devuelvas en "new" nada que ya esté en la lista de cabos abiertos')
+    expect(buildSweepPrompt('r', [item()])).toContain('Cabos abiertos:\n- a1')
   })
   test('parses JSON wrapped in prose and cleans it', () => {
     const reply = 'Aquí va:\n{"new":[{"text":"  Añadir test de canonical ","priority":"high","evidence":"lo dejo fuera"},{"text":"x"},{"text":"Sin prioridad"}],"resolved":["a1","zz"]}'

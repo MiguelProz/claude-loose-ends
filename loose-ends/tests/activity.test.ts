@@ -39,6 +39,13 @@ describe('mood', () => {
     s = moodReduce(s, { type: 'worry' }, t0 + 40)
     expect(moodAt(s, t0 + 50)).toBe('worried')
   })
+  test('turn end keeps a live non-talking flash', () => {
+    let s = moodReduce(initialMood(t0), { type: 'commit' }, t0)
+    s = moodReduce(s, { type: 'turn.end' }, t0 + 10)
+    expect(moodAt(s, t0 + 20)).toBe('celebrate')
+    expect(s.working).toBe(false)
+    expect(moodAt(s, t0 + FLASH_MS + 1)).toBe('idle')
+  })
   test('sleeps when idle long enough, never while working', () => {
     const idle = initialMood(t0)
     expect(moodAt(idle, t0 + SLEEP_AFTER_MS)).toBe('sleeping')
@@ -60,6 +67,7 @@ describe('bash', () => {
     expect(bashFailed({ isError: true })).toBe(true)
     expect(bashFailed({ text: ' Tests  2 failed | 40 passed' })).toBe(true)
     expect(bashFailed({ text: 'all good' })).toBe(false)
+    expect(bashFailed({ text: 'Tests  0 failed | 40 passed' })).toBe(false)
     expect(bashFailed(undefined)).toBe(false)
   })
 })

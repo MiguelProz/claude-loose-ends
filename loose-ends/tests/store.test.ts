@@ -15,6 +15,8 @@ describe('parseFile', () => {
   test('broken JSON and wrong shape are refused', () => {
     expect(parseFile('{nope')).toEqual({ ok: false, error: 'json' })
     expect(parseFile('{"items": 3}')).toEqual({ ok: false, error: 'shape' })
+    expect(parseFile('{"items":[null]}')).toEqual({ ok: false, error: 'shape' })
+    expect(parseFile('{"items":[{"text":"sin id"}]}')).toEqual({ ok: false, error: 'shape' })
   })
   test('round-trips through serialize', () => {
     const { items } = addItem([], base())

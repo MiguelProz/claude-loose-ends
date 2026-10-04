@@ -26,6 +26,7 @@ export const SWEEP_SYSTEM = [
   'Lees la respuesta de un asistente de programación y extraes cabos sueltos.',
   'Un cabo suelto es algo que el asistente dice que habría que hacer o corregir y que NO hace en esa respuesta: fuera de alcance, lo deja para luego, un test que se salta, un aviso que ignora, una deuda que ve de paso.',
   'No es cabo suelto: lo que sí hace, preguntas al usuario, opciones que ofrece sin recomendar hacerlas.',
+  'No devuelvas en "new" nada que ya esté en la lista de cabos abiertos, aunque la respuesta lo mencione o lo diga con otras palabras.',
   'También marcas como resueltos los cabos abiertos de la lista que la respuesta deja hechos de verdad.',
   'Responde SOLO con JSON: {"new":[{"text":"frase accionable en español","priority":"high|medium|low","evidence":"frase literal"}],"resolved":["id"]}.',
   'Sin cabos nuevos ni resueltos: {"new":[],"resolved":[]}.',
