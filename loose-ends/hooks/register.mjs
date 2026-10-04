@@ -2,11 +2,25 @@ import { FILE, active, addItem, close, counts, dueReminders, expireReminded, mar
 import { FLASH_MS, bashFailed, classifyBash, initialMood, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
 import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
+import { FILE_TOOLS, candidatePaths, candidateRepos, repoName } from '../lib/repos.mjs'
 import { renderBand, renderPane } from '../lib/view.mjs'
+
+const NO_GIT_NOTE = 'Esta sesión no está en un repo git: indica "repo" con la ruta del repo del cabo.'
+const NOT_A_REPO = 'La ruta no está dentro de un repo git: no se ha apuntado.'
+const MAX_WALK = 3
+const MAX_CACHE = 500
+const MAX_PATHS_PER_CALL = 10
+const MAX_TOUCHED = 6
 
 let items = []
 let fileError = null
 let branch = null
+// Toplevel of the repo the session works in; null outside git, where nothing of the session is persisted.
+let sessionRepo = null
+let foreignError = null
+let touched = new Set()
+let touchChain = Promise.resolve()
+const repoCache = new Map()
 let writeChain = Promise.resolve()
 let sessionStart = 0
 let working = false
@@ -44,18 +58,24 @@ function clearDiscard(id) {
   if (discarding === id) discarding = null
 }
 
-async function filePath($) {
-  return `${await projectRoot($)}/${FILE}`
-}
-
 async function nowIso($) {
   return new Date(await $.clock.now()).toISOString()
 }
 
-async function load($) {
-  const path = await filePath($)
+async function readRepo($, root) {
+  const path = `${root}/${FILE}`
   const text = (await $.fs.exists(path)) ? await $.fs.read(path) : null
-  const parsed = parseFile(text)
+  return parseFile(text)
+}
+
+// Loads the session repo's items into memory; outside git there is nothing to read and nothing is touched.
+async function load($) {
+  if (!sessionRepo) {
+    items = []
+    fileError = null
+    return items
+  }
+  const parsed = await readRepo($, sessionRepo)
   if (!parsed.ok) {
     fileError = parsed.error
     return null
@@ -65,8 +85,28 @@ async function load($) {
   return items
 }
 
-// Read-modify-write on the file; callers go through `mutate`, which serializes them.
-async function mutateNow($, fn) {
+// Read-modify-write on another repo's file: its items never enter memory.
+async function mutateForeign($, fn, root) {
+  const parsed = await readRepo($, root)
+  if (!parsed.ok) {
+    foreignError = parsed.error
+    return null
+  }
+  const result = fn(parsed.items)
+  const nextItems = Array.isArray(result) ? result : result.items
+  if (serialize(nextItems) !== serialize(parsed.items)) await $.fs.write(`${root}/${FILE}`, serialize(nextItems))
+  return result
+}
+
+// Read-modify-write on a repo's file (the session's by default, resolved when the write runs); callers go through `mutate`, which serializes them.
+async function mutateNow($, fn, root) {
+  const target = root === undefined ? sessionRepo : root
+  if (target === null) {
+    await load($)
+    $.ui.invalidate('ui.render')
+    return null
+  }
+  if (target !== sessionRepo) return mutateForeign($, fn, target)
   const fresh = await load($)
   if (fresh === null) {
     $.ui.invalidate('ui.render')
@@ -74,30 +114,89 @@ async function mutateNow($, fn) {
   }
   const result = fn(fresh)
   const nextItems = Array.isArray(result) ? result : result.items
-  if (serialize(nextItems) !== serialize(fresh)) await $.fs.write(await filePath($), serialize(nextItems))
+  if (serialize(nextItems) !== serialize(fresh)) await $.fs.write(`${target}/${FILE}`, serialize(nextItems))
   items = nextItems
   if (discarding && !active(items).some(i => i.id === discarding)) discarding = null
   $.ui.invalidate('ui.render')
   return result
 }
 
-async function mutate($, fn) {
-  const run = writeChain.then(() => mutateNow($, fn))
+async function mutate($, fn, root) {
+  const run = writeChain.then(() => mutateNow($, fn, root))
   writeChain = run.catch(() => {})
   return run
 }
 
-async function readBranch($) {
-  const r = await $.process.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], { cwd: await projectRoot($) })
+async function toplevelOf($, dir) {
+  const r = await $.process.run(['git', '-C', dir, 'rev-parse', '--show-toplevel'])
+  if (r.exitCode !== 0) return null
+  const top = typeof r.stdout === 'string' ? r.stdout.trim() : ''
+  if (!top.startsWith('/')) throw new Error('git no dio la raíz del repo')
+  return top
+}
+
+function parentDir(dir) {
+  return dir.slice(0, dir.lastIndexOf('/')) || '/'
+}
+
+// Toplevel of the git repo a path belongs to, or null (also when git cannot run). A file path starts at its
+// directory; anything else starts at itself. Climbs a few levels for folders that do not exist yet.
+async function repoOf($, path, { file = false, fresh = false } = {}) {
+  if (typeof path !== 'string' || !path.startsWith('/')) return null
+  let dir = path.length > 1 ? path.replace(/\/+$/, '') : path
+  if (file) dir = parentDir(dir)
+  const tried = []
+  for (let depth = 0; depth < MAX_WALK; depth++) {
+    if (fresh) repoCache.delete(dir)
+    let top = repoCache.get(dir)
+    if (top === undefined) {
+      try {
+        top = await toplevelOf($, dir)
+      } catch {
+        return null
+      }
+      if (repoCache.size >= MAX_CACHE) repoCache.clear()
+      repoCache.set(dir, top)
+    }
+    if (top) {
+      for (const d of tried) repoCache.set(d, top)
+      return top
+    }
+    tried.push(dir)
+    const parent = parentDir(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+  return null
+}
+
+// The session's repo from its root, read afresh; throws when git cannot say, so callers keep the last answer.
+async function refreshSessionRepo($) {
+  const root = await projectRoot($)
+  repoCache.delete(root)
+  const top = await toplevelOf($, root)
+  repoCache.set(root, top)
+  sessionRepo = top
+}
+
+async function branchOf($, dir) {
+  const r = await $.process.run(['git', '-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'])
   return r.exitCode === 0 ? r.stdout.trim() : null
 }
 
-async function note($, input) {
+async function readBranch($) {
+  return sessionRepo ? branchOf($, sessionRepo) : null
+}
+
+// Files a loose end in `target`, the toplevel of the repo it belongs to. Only the session repo's items live in memory.
+async function note($, input, target) {
   const now = await nowIso($)
-  branch = await readBranch($)
+  const isSession = target === sessionRepo
+  const noteBranch = await branchOf($, target)
+  if (isSession) branch = noteBranch
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
-  const res = await mutate($, list => addItem(list, { ...input, id, branch, now }))
-  if (res && res.added) $.ui.toast(`Cabo suelto: ${res.added.text}`)
+  const res = await mutate($, list => addItem(list, { ...input, id, branch: noteBranch, now }), target)
+  if (res && res.added) $.ui.toast(isSession ? `Cabo suelto: ${res.added.text}` : `Cabo suelto (${repoName(target)}): ${res.added.text}`)
   return res ? res.added : undefined
 }
 
@@ -109,11 +208,11 @@ async function feel($, ev) {
 }
 
 async function readCommits($) {
-  if (!sessionStart) return []
+  if (!sessionStart || !sessionRepo) return []
   const midnight = new Date(await $.clock.now())
   midnight.setHours(0, 0, 0, 0)
   const since = new Date(Math.max(sessionStart, midnight.getTime())).toISOString()
-  const r = await $.process.run(['git', 'log', `--since=${since}`, '--format=%h%x09%s'], { cwd: await projectRoot($) })
+  const r = await $.process.run(['git', 'log', `--since=${since}`, '--format=%h%x09%s'], { cwd: sessionRepo })
   if (r.exitCode !== 0) return []
   return r.stdout
     .split('\n')
@@ -124,20 +223,41 @@ async function readCommits($) {
     })
 }
 
-async function sweep($, answer) {
+// Repos the main loop touched this turn, once the lookups queued by `trackRepos` have finished.
+async function touch($, set, paths, isFile) {
+  for (const path of paths) {
+    const top = await repoOf($, path, { file: isFile })
+    if (top && set.size < MAX_TOUCHED) set.add(top)
+  }
+}
+
+function trackRepos($, e) {
+  const paths = candidatePaths(e.tool, e).slice(0, MAX_PATHS_PER_CALL)
+  if (!paths.length) return
+  const set = touched
+  const isFile = FILE_TOOLS.has(e.tool)
+  touchChain = touchChain.then(() => touch($, set, paths, isFile)).catch(err => logDebug($, `loose-ends: resolver los repos tocados falló (${err?.message ?? err})`))
+}
+
+async function sweep($, answer, touchedNow) {
+  const others = (await touchedNow).filter(repo => repo !== sessionRepo)
+  if (!sessionRepo && !others.length) return
+  const candidates = others.length ? candidateRepos(sessionRepo, others) : []
   const open = active(items)
-  const r = await $.model.complete({ model: SWEEP_MODEL, system: SWEEP_SYSTEM, prompt: buildSweepPrompt(answer, open), maxTokens: 800, timeoutMs: 20000 })
+  const r = await $.model.complete({ model: SWEEP_MODEL, system: SWEEP_SYSTEM, prompt: buildSweepPrompt(answer, open, candidates), maxTokens: 800, timeoutMs: 20000 })
   if (!r.isAnswered) {
     $.ui.log(`loose-ends: barrido omitido (${r.reason})`, { to: 'debug' })
     return
   }
-  const parsed = parseSweepReply(r.text, open.map(i => i.id))
+  const parsed = parseSweepReply(r.text, open.map(i => i.id), candidates)
   if (!parsed) {
     $.ui.log('loose-ends: barrido con JSON inválido', { to: 'debug' })
     return
   }
-  for (const fresh of parsed.fresh) {
-    const added = await note($, { ...fresh, source: 'sweep' })
+  for (const { repo, ...fresh } of parsed.fresh) {
+    const target = repo ?? sessionRepo
+    if (!target) continue
+    const added = await note($, { ...fresh, source: 'sweep' }, target)
     if (added && added.priority === 'high') await feel($, { type: 'worry' })
   }
   if (parsed.resolved.length) {
@@ -160,6 +280,7 @@ function paneModel(now) {
     branch,
     working,
     fileError,
+    noRepo: sessionRepo === null,
     discarding,
     showOthers,
     plan: { items: plan, ...planProgress(plan) },
@@ -194,6 +315,9 @@ export function register(on) {
     sessionStart = (await $.session.usage()).startedAt
     await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA })
     await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: plan, cabos sueltos y hecho', immediate: true })
+    touched = new Set()
+    sessionRepo = null
+    await guarded($, 'resolver el repo de la sesión', () => refreshSessionRepo($))
     branch = await readBranch($)
     await load($)
     mood = initialMood(await $.clock.now())
@@ -211,6 +335,7 @@ export function register(on) {
     if (e.tool === 'TaskCreate' && r.result && r.result.task) plan = planReduce(plan, { kind: 'create', id: r.result.task.id, subject: e.subject })
     if (e.tool === 'TaskUpdate') plan = planReduce(plan, { kind: 'update', id: e.taskId, status: e.status, subject: e.subject })
     if (e.tool === 'TodoWrite' && Array.isArray(e.todos)) plan = planReduce(plan, { kind: 'todos', todos: e.todos })
+    trackRepos($, e)
     if (e.tool === 'Bash' && typeof e.command === 'string') {
       const kind = classifyBash(e.command, bashFailed(r))
       if (kind) await feel($, { type: kind })
@@ -221,6 +346,7 @@ export function register(on) {
 
   on('turn.start', async ($, e, next) => {
     working = true
+    touched = new Set()
     await feel($, { type: 'turn.start' })
     return next(e)
   })
@@ -230,17 +356,26 @@ export function register(on) {
     if (e.agentId) return r
     working = false
     await feel($, { type: 'turn.end' })
+    await guarded($, 'resolver el repo de la sesión tras el turno', () => refreshSessionRepo($))
     await guarded($, 'leer la rama tras el turno', async () => { branch = await readBranch($) })
     await guarded($, 'refrescar los cabos tras el turno', () => mutate($, list => list))
     await guarded($, 'leer los commits tras el turno', async () => { commits = await readCommits($) })
-    if (e.reason === 'answer' && shouldSweep(e.answer)) background($, sweep($, e.answer), 'el barrido')
+    if (e.reason === 'answer' && shouldSweep(e.answer)) {
+      const set = touched
+      background($, sweep($, e.answer, touchChain.then(() => [...set])), 'el barrido')
+    }
     return r
   })
 
   on('tool.call', { tool: 'mcp__loose-ends__note_loose_end' }, async ($, e) => {
     if (String(e.text ?? '').trim().length < 3) return { result: 'Texto demasiado corto: describe el cabo en una frase.' }
-    const added = await note($, { text: e.text, priority: e.priority, evidence: e.evidence, source: 'tool' })
-    if (added === undefined) return { result: `No se pudo apuntar: ${FILE} está ilegible (${fileError}).` }
+    let target = sessionRepo
+    if (typeof e.repo === 'string' && e.repo.trim()) {
+      target = await repoOf($, e.repo.trim(), { fresh: true })
+      if (!target) return { result: NOT_A_REPO }
+    } else if (!target) return { result: NO_GIT_NOTE }
+    const added = await note($, { text: e.text, priority: e.priority, evidence: e.evidence, source: 'tool' }, target)
+    if (added === undefined) return { result: target === sessionRepo ? `No se pudo apuntar: ${FILE} está ilegible (${fileError}).` : `No se pudo apuntar: ${target}/${FILE} está ilegible (${foreignError}).` }
     if (added && added.priority === 'high') await feel($, { type: 'worry' })
     return { result: added ? `Apuntado (${added.id}): ${added.text}` : 'Ya estaba apuntado.' }
   })

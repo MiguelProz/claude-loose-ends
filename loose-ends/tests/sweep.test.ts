@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { buildSweepPrompt, MIN_ANSWER, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
-import { SWEEP_SYSTEM, doNowText, formatContext, reminderText, TOOL_ID, TOOL_SCHEMA } from '../lib/prompts.mjs'
+import { SWEEP_SYSTEM, doNowText, formatContext, reminderText, TOOL_GUIDE, TOOL_ID, TOOL_SCHEMA } from '../lib/prompts.mjs'
 
 const item = (over = {}) => ({ id: 'a1', text: 'Tipar team-drafts', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T10:00:00.000Z', ...over })
 
@@ -69,5 +69,37 @@ describe('prompts', () => {
   test('reminder and do-now texts', () => {
     expect(reminderText([item()])).toContain('- Tipar team-drafts (a1)')
     expect(doNowText(item({ evidence: 'habría que tiparlo' }))).toContain('«habría que tiparlo»')
+  })
+})
+
+describe('sweep with candidate repos', () => {
+  const cands = ['/Users/m/web-app', '/Users/m/api']
+  test('the prompt lists every candidate repo by name and path', () => {
+    const p = buildSweepPrompt('respuesta', [item()], cands)
+    expect(p).toContain('Repos candidatos:\n- web-app: /Users/m/web-app\n- api: /Users/m/api')
+    expect(p).toContain('<<<\nrespuesta\n>>>')
+  })
+  test('without candidates the prompt has no repo section', () => {
+    expect(buildSweepPrompt('respuesta', [item()])).not.toContain('Repos candidatos')
+    expect(buildSweepPrompt('respuesta', [item()], [])).not.toContain('Repos candidatos')
+  })
+  test('a repo is kept only when it is one of the candidates', () => {
+    const reply = '{"new":[{"text":"Cabo en la api","priority":"low","repo":"/Users/m/api"},{"text":"Cabo en otro sitio","priority":"low","repo":"/etc/otro"},{"text":"Cabo sin repo","priority":"low"},{"text":"Repo no texto","priority":"low","repo":7}],"resolved":[]}'
+    expect(parseSweepReply(reply, [], cands)?.fresh.map(f => [f.text, f.repo])).toEqual([
+      ['Cabo en la api', '/Users/m/api'],
+      ['Cabo en otro sitio', undefined],
+      ['Cabo sin repo', undefined],
+      ['Repo no texto', undefined],
+    ])
+  })
+  test('without a candidate list no repo survives', () => {
+    expect(parseSweepReply('{"new":[{"text":"Cabo en la api","repo":"/Users/m/api"}],"resolved":[]}', [])?.fresh[0].repo).toBeUndefined()
+  })
+  test('the system prompt and the tool describe the repo field', () => {
+    expect(SWEEP_SYSTEM).toContain('"repo"')
+    expect(SWEEP_SYSTEM).toContain('Repos candidatos')
+    expect(Object.keys(TOOL_SCHEMA.properties)).toContain('repo')
+    expect(TOOL_SCHEMA.required).toEqual(['text', 'priority'])
+    expect(TOOL_GUIDE).toContain('repo')
   })
 })

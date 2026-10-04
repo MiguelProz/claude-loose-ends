@@ -100,6 +100,11 @@ export function renderPane(el, m, actions) {
     out.push(el.Text({ dimColor: t.status === 'completed', children: `${mark} ${t.subject}` }))
   }
 
+  if (m.noRepo) {
+    out.push(el.Text({ dimColor: true, children: 'Esta sesión no está dentro de un repo git.' }))
+    return el.Box({ flexDirection: 'column', children: out })
+  }
+
   out.push(title(`CABOS SUELTOS  ${m.loose.length}`))
   if (!m.loose.length) out.push(el.Text({ dimColor: true, children: 'Nada colgando en esta rama.' }))
   for (const item of m.loose) out.push(itemRow(el, item, m, actions))
