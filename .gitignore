@@ -1,0 +1,4 @@
+.superpowers/
+loose-ends/.claude-plugin/types/
+loose-ends/tsconfig.json
+.DS_Store

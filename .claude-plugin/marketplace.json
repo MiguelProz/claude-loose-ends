@@ -1,0 +1,14 @@
+{
+  "name": "claude-loose-ends",
+  "owner": {
+    "name": "Miguel Ángel Pérez García"
+  },
+  "description": "Marketplace del mod loose-ends: el cuaderno de la sesión con Chispa para Claude Code.",
+  "plugins": [
+    {
+      "name": "loose-ends",
+      "source": "./loose-ends",
+      "description": "Cuaderno de la sesión: plan, cabos sueltos que Claude menciona y no hace, y lo hecho, con Chispa, una mascota pixel art."
+    }
+  ]
+}
