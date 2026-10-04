@@ -3,9 +3,13 @@
 Cuaderno de la sesión para Claude Code, con Chispa.
 
 - **Cabos sueltos**: lo que Claude menciona y no hace. Claude los apunta con la
-  herramienta `note_loose_end`, y tras cada respuesta larga Haiku
-  (`claude-haiku-4-5-20251001`) caza los que se le escaparon y cierra los que
-  quedaron resueltos.
+  herramienta `note_loose_end`, y tras cada respuesta larga (500 caracteres o
+  más) Haiku (`claude-haiku-4-5-20251001`) caza los que se le escaparon y cierra
+  los que quedaron resueltos. Solo cuenta como cabo el trabajo concreto que se
+  deja sin hacer (un bug o una deuda sin arreglar, un test que se salta, un
+  aviso que se ignora), no esperas, comprobaciones, preguntas ni informes de
+  estado. El barrido apunta como máximo 2 por respuesta y solo si cita
+  literalmente la frase de la respuesta donde lo deja sin hacer.
 - **Dónde se guardan**: `.claude/loose-ends.json` en la raíz del **repo git al
   que pertenece cada cabo**, no en el de la sesión que lo encontró. Sin
   `repo`, la herramienta apunta en el repo de la sesión; con `repo` (ruta
@@ -14,12 +18,15 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   solo ve y recuerda los cabos de su propio repo. Fuera de un repo git no se
   guarda nada de la sesión (nunca en `~/.claude/`). Versiónalo con el repo: así
   viaja entre ordenadores y ramas.
-- **Banda** encima del prompt: Chispa (animada en la app de escritorio, una
-  cara de texto en la terminal) y los contadores `plan · cabos · en cola`.
-- **Panel** (`/pendientes` o el botón «ver»): plan de la sesión, cabos con
-  `Hazlo ahora`, `Cola`, `Hecho`, `Descartar` y prioridad, y lo hecho hoy. En
-  la superficie `mobile` el panel no dibuja nada (no tiene selectores ni
-  campos de texto); la banda sí.
+- **Banda** encima del prompt: una línea discreta con Chispa (animada en la app
+  de escritorio, una cara de texto en la terminal), un resumen atenuado como
+  `3 pendientes (1 urgente) · plan 4/7` y el botón `Ver`. Sin nada que contar,
+  solo Chispa.
+- **Panel** (`/pendientes` o el botón `Ver`): pendientes, plan de la sesión y
+  lo hecho hoy (plegado). Cada pendiente enseña `Hacer`, `Hecho` y `···`; este
+  último despliega la evidencia, `Cola`, `Descartar` y la prioridad (`Urgente`,
+  `Normal`, `Baja`). En la superficie `mobile` el panel no dibuja nada (no
+  tiene campos de texto); la banda sí.
 - **Cola al terminar**: al cerrar la tarea, Claude recibe una vez los cabos en
   cola; si no los resuelve, vuelven a abiertos.
 

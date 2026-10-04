@@ -1,6 +1,6 @@
 {
   "name": "loose-ends",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Guarda entre sesiones los cabos sueltos que Claude menciona y no hace, enseña plan, pendientes y hecho, y anima a Chispa según lo que hace Claude.",
   "author": { "name": "Miguel Ángel Pérez García" }
 }
