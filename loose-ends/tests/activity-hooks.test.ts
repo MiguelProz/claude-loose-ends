@@ -7,21 +7,34 @@ const ok = (on: any) => on('tool.call', ($: any, e: any) => {
   return { result: {} }
 })
 const done = (on: any) => on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
+const EVIDENCE = 'lo dejo para otro día'
+// long enough to be swept (500+) and carrying the phrase the fake Haiku quotes as evidence
+const longAnswer = (fill: string) => `${fill.repeat(500)} ${EVIDENCE}`
 const answered = (text: string) => ({ value: { isAnswered: true, text, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
 
 test('sweep adds new loose ends and resolves open ones', async ($, on) => {
   const file = JSON.stringify({ version: 1, items: [{ id: 'a1', text: 'Tipar drafts', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-01T00:00:00.000Z' }] })
   const w = world(on, { [PATH]: file })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Comprimir foto 3","priority":"low"}],"resolved":["a1"]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Comprimir foto 3","priority":"low","evidence":"lo dejo para otro día"}],"resolved":["a1"]}') })
   done(on)
   await w.start($)
-  await $.turn.complete({ answer: 'y'.repeat(400), durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
+  await $.turn.complete({ answer: longAnswer('y'), durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
   await w.clock.settle()
   expect(asked).toContain('a1: Tipar drafts')
   const saved = w.saved()
   expect(saved.find((i: any) => i.id === 'a1')).toMatchObject({ status: 'done', closedBy: 'sweep' })
   expect(saved.find((i: any) => i.text === 'Comprimir foto 3')).toMatchObject({ source: 'sweep', priority: 'low' })
+})
+
+test('the sweep drops a new item whose evidence the answer never said', async ($, on) => {
+  const w = world(on)
+  on('model.complete', () => answered('{"new":[{"text":"Cabo inventado","priority":"high","evidence":"esto no aparece en la respuesta"},{"text":"Cabo real","priority":"low","evidence":"LO DEJO para  otro día"}],"resolved":[]}'))
+  done(on)
+  await w.start($)
+  await $.turn.complete({ answer: longAnswer('y'), durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
+  await w.clock.settle()
+  expect(w.saved().map((i: any) => i.text)).toEqual(['Cabo real'])
 })
 
 test('short answers are not swept; broken replies change nothing', async ($, on) => {
@@ -31,7 +44,7 @@ test('short answers are not swept; broken replies change nothing', async ($, on)
   done(on)
   await w.start($)
   await $.turn.complete({ answer: 'corto', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
-  await $.turn.complete({ answer: 'z'.repeat(400), durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+  await $.turn.complete({ answer: longAnswer('z'), durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
   await w.clock.settle()
   expect(calls).toBe(1)
   expect(w.saved()).toEqual([])
@@ -56,7 +69,7 @@ test('sweep never overwrites an item the user closed meanwhile', async ($, on) =
   })
   done(on)
   await w.start($)
-  await $.turn.complete({ answer: 'y'.repeat(400), durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
+  await $.turn.complete({ answer: longAnswer('y'), durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
   await w.clock.settle()
   expect(w.saved()[0]).toMatchObject({ status: 'dismissed', closedBy: 'user' })
 })
@@ -78,10 +91,10 @@ test('only an answered turn is swept', async ($, on) => {
   on('model.complete', () => { calls++; return answered('{"new":[],"resolved":[]}') })
   done(on)
   await w.start($)
-  await $.turn.complete({ answer: 'e'.repeat(400), durationMs: 1, isAborted: false, turnId: 't', reason: 'error' })
+  await $.turn.complete({ answer: longAnswer('e'), durationMs: 1, isAborted: false, turnId: 't', reason: 'error' })
   await w.clock.settle()
   expect(calls).toBe(0)
-  await $.turn.complete({ answer: 'e'.repeat(400), durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+  await $.turn.complete({ answer: longAnswer('e'), durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
   await w.clock.settle()
   expect(calls).toBe(1)
 })
@@ -115,7 +128,7 @@ test('with git failing the items still refresh before the sweep', async ($, on) 
   await w.start($)
   w.fs[PATH] = JSON.stringify({ version: 1, items: [{ id: 'n1', text: 'Añadido entre turnos', priority: 'low', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
   w.flags.failGit = true
-  await $.turn.complete({ answer: 'y'.repeat(400), durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
+  await $.turn.complete({ answer: longAnswer('y'), durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
   await w.clock.settle()
   expect(w.logs.some(l => l.includes('leer la rama tras el turno falló'))).toBe(true)
   expect(w.logs.some(l => l.includes('leer los commits tras el turno falló'))).toBe(true)

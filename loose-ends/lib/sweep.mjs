@@ -2,7 +2,9 @@ import { PRIORITIES } from './store.mjs'
 import { formatCandidates } from './repos.mjs'
 
 export const SWEEP_MODEL = 'claude-haiku-4-5-20251001'
-export const MIN_ANSWER = 300
+export const MIN_ANSWER = 500
+export const MAX_NEW = 2
+export const MIN_EVIDENCE = 12
 
 export function shouldSweep(answer) {
   return typeof answer === 'string' && answer.length >= MIN_ANSWER
@@ -47,17 +49,29 @@ function firstJsonObject(text) {
   return null
 }
 
-export function parseSweepReply(text, openIds, candidatePaths = []) {
+function squash(text) {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+// Evidence must be a literal stretch of the answer (case and whitespace aside), long enough to mean something.
+function quotedIn(evidence, haystack) {
+  if (typeof evidence !== 'string') return false
+  const needle = squash(evidence)
+  return needle.length >= MIN_EVIDENCE && haystack.includes(needle)
+}
+
+export function parseSweepReply(text, openIds, candidatePaths = [], answer = '') {
   const data = firstJsonObject(text)
   if (!data) return null
   const repos = new Set(candidatePaths)
+  const haystack = squash(typeof answer === 'string' ? answer : '')
   const fresh = (Array.isArray(data.new) ? data.new : [])
-    .filter(x => x && typeof x.text === 'string' && x.text.trim().length >= 3)
-    .slice(0, 5)
+    .filter(x => x && typeof x.text === 'string' && x.text.trim().length >= 3 && quotedIn(x.evidence, haystack))
+    .slice(0, MAX_NEW)
     .map(x => ({
       text: x.text.trim().slice(0, 300),
       priority: PRIORITIES.includes(x.priority) ? x.priority : 'medium',
-      evidence: typeof x.evidence === 'string' ? x.evidence.slice(0, 400) : undefined,
+      evidence: x.evidence.slice(0, 400),
       repo: typeof x.repo === 'string' && repos.has(x.repo) ? x.repo : undefined,
     }))
   const known = new Set(openIds)

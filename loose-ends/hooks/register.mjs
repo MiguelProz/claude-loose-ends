@@ -281,7 +281,7 @@ async function sweep($, answer, touchedNow) {
     $.ui.log(`loose-ends: barrido omitido (${r.reason})`, { to: 'debug' })
     return
   }
-  const parsed = parseSweepReply(r.text, open.map(i => i.id), candidates)
+  const parsed = parseSweepReply(r.text, open.map(i => i.id), candidates, answer)
   if (!parsed) {
     $.ui.log('loose-ends: barrido con JSON inválido', { to: 'debug' })
     return

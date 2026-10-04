@@ -20,16 +20,18 @@ export const TOOL_SCHEMA = {
 export const TOOL_GUIDE = [
   '# Cabos sueltos',
   `Cuando menciones algo que habría que hacer o corregir y no lo vayas a hacer en esta tarea (fuera de alcance, un test que te saltas, un aviso que ignoras, una deuda que ves de paso), llama a ${TOOL_ID} en ese mismo turno.`,
-  'No apuntes lo que vas a hacer tú mismo ahora, ni repitas uno que ya está en la lista de cabos abiertos.',
+  'Solo es un cabo suelto el trabajo concreto sobre el código o el producto que dejas sin hacer: no apuntes esperar o vigilar algo (CI, despliegues, agentes), comprobar que algo funciona, informar del estado, preguntas o decisiones para el usuario, lo que vas a hacer tú mismo ahora, comentarios sobre la conversación, ni repitas uno que ya está en la lista de cabos abiertos.',
   'Cada cabo se guarda en el repo al que pertenece: si no es el de esta sesión (tocaste otro repo), pasa en "repo" la ruta absoluta de un fichero o carpeta de ese repo.',
 ].join('\n')
 
 export const SWEEP_SYSTEM = [
   'Lees la respuesta de un asistente de programación y extraes cabos sueltos.',
-  'Un cabo suelto es algo que el asistente dice que habría que hacer o corregir y que NO hace en esa respuesta: fuera de alcance, lo deja para luego, un test que se salta, un aviso que ignora, una deuda que ve de paso.',
-  'No es cabo suelto: lo que sí hace, preguntas al usuario, opciones que ofrece sin recomendar hacerlas.',
-  'No devuelvas en "new" nada que ya esté en la lista de cabos abiertos, aunque la respuesta lo mencione o lo diga con otras palabras.',
+  'Un cabo suelto es SOLO trabajo concreto sobre el código o el producto que el asistente deja explícitamente sin hacer: un bug o una deuda que vio y no arregló, algo que dijo que habría que cambiar más adelante, un test que se salta, un aviso que ignora.',
+  'NO es cabo suelto: esperar o vigilar algo (CI, despliegues, agentes), comprobar que algo funciona, informar del estado al usuario, preguntas o decisiones para el usuario y opciones que ofrece, lo que hace ahora o en su siguiente paso, comentarios sobre la conversación o el proceso, ni nada que ya esté en la lista de cabos abiertos aunque esté con otras palabras.',
+  'Ante la duda, no lo apuntes: es mejor devolver "new" vacío. Devuelve como máximo 2 cabos nuevos.',
+  'Cada cabo nuevo lleva en "evidence" la frase literal de la respuesta donde el asistente lo deja sin hacer, copiada tal cual (mínimo 12 caracteres); sin esa cita no se guarda.',
   'También marcas como resueltos los cabos abiertos de la lista que la respuesta deja hechos de verdad.',
+  'No devuelvas en "new" nada que ya esté en la lista de cabos abiertos, aunque la respuesta lo mencione o lo diga con otras palabras.',
   'Si hay una lista "Repos candidatos", rellena "repo" en cada cabo nuevo con la ruta exacta de uno de esos repos cuando el cabo pertenezca claramente a él; si dudas, omite "repo".',
   'Responde SOLO con JSON: {"new":[{"text":"frase accionable en español","priority":"high|medium|low","evidence":"frase literal","repo":"ruta de un repo candidato (opcional)"}],"resolved":["id"]}.',
   'Sin cabos nuevos ni resueltos: {"new":[],"resolved":[]}.',

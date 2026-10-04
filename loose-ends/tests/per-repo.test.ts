@@ -7,6 +7,9 @@ const OTHER = pathOf('/other')
 const BAND = { component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as any }
 const PANE = { component: 'Pane', requestId: 'loose-ends', props: { title: 'Cuaderno', isFocused: true, bodyColumns: 60, placement: 'dock' } as any }
 const own = JSON.stringify({ version: 1, items: [{ id: 'a1', text: 'Cabo de la sesión', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
+const EVIDENCE = 'lo dejo para otro día'
+// long enough to be swept (500+) and carrying the phrase the fake Haiku quotes as evidence
+const longAnswer = (fill: string) => `${fill.repeat(500)} ${EVIDENCE}`
 const answered = (text: string) => ({ value: { isAnswered: true, text, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
 const tools = (on: any) => on('tool.call', () => ({ result: {} }))
 const turns = (on: any) => {
@@ -14,7 +17,7 @@ const turns = (on: any) => {
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
 }
 const startTurn = ($: any, turnId = 't') => $.turn.start({ text: 'hola', turnId })
-const endTurn = ($: any, turnId = 't') => $.turn.complete({ answer: 'y'.repeat(400), durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+const endTurn = ($: any, turnId = 't') => $.turn.complete({ answer: longAnswer('y'), durationMs: 10, isAborted: false, turnId, reason: 'answer' })
 
 test('a note with repo goes to that repo, not to the session file', async ($, on) => {
   const w = world(on, { [PATH]: own }, { repos: REPOS, branches: { '/other': 'feat/o' } })
@@ -84,7 +87,7 @@ test('the session repo is refreshed after each turn', async ($, on) => {
 test('the sweep files a new item in a repo touched this turn when Haiku names it', async ($, on) => {
   const w = world(on, { [PATH]: own }, { repos: REPOS, branches: { '/other': 'feat/o' } })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","repo":"/other"},{"text":"Cabo para la sesión","priority":"low"}],"resolved":["a1"]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"lo dejo para otro día"}],"resolved":["a1"]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -100,7 +103,7 @@ test('the sweep files a new item in a repo touched this turn when Haiku names it
 
 test('the sweep falls back to the session repo when the path is not a candidate', async ($, on) => {
   const w = world(on, {}, { repos: REPOS })
-  on('model.complete', () => answered('{"new":[{"text":"Cabo con repo inventado","priority":"low","repo":"/other"}],"resolved":[]}'))
+  on('model.complete', () => answered('{"new":[{"text":"Cabo con repo inventado","priority":"low","evidence":"lo dejo para otro día","repo":"/other"}],"resolved":[]}'))
   tools(on)
   turns(on)
   await w.start($)
@@ -187,7 +190,7 @@ test('subagent tool calls do not mark repos', async ($, on) => {
 test('outside git nothing touches the session filesystem', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, root: '/home/m' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo sin repo","priority":"high"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo sin repo","priority":"high","evidence":"lo dejo para otro día"}],"resolved":[]}') })
   on('classic.Stop', () => ({}))
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
@@ -214,7 +217,7 @@ test('outside git nothing touches the session filesystem', async ($, on) => {
 test('outside git the sweep writes only items whose repo is a touched one', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, root: '/home/m' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","repo":"/other"},{"text":"Cabo sin repo","priority":"low"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo sin repo","priority":"low","evidence":"lo dejo para otro día"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -284,7 +287,7 @@ test('outside git the band keeps the plan counter but shows no loose-end counter
 test('a repo under .claude is never a candidate nor written', async ($, on) => {
   const w = world(on, {}, { repos: { ...REPOS, [plugin]: plugin } })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered(`{"new":[{"text":"Cabo del plugin","priority":"low","repo":"${plugin}"}],"resolved":[]}`) })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered(`{"new":[{"text":"Cabo del plugin","priority":"low","evidence":"lo dejo para otro día","repo":"${plugin}"}],"resolved":[]}`) })
   tools(on)
   turns(on)
   await w.start($)
@@ -308,7 +311,7 @@ test('the tool refuses a repo under .claude', async ($, on) => {
 
 test('a session whose repo is the home directory behaves as outside git', async ($, on) => {
   const w = world(on, {}, { repos: { '/Users/m': '/Users/m', '/other': '/other' }, root: '/Users/m/work' })
-  on('model.complete', () => answered('{"new":[{"text":"Cabo suelto en casa","priority":"low"}],"resolved":[]}'))
+  on('model.complete', () => answered('{"new":[{"text":"Cabo suelto en casa","priority":"low","evidence":"lo dejo para otro día"}],"resolved":[]}'))
   tools(on)
   turns(on)
   await w.start($)
@@ -421,7 +424,7 @@ test('a Claude Code worktree under .claude is a valid session repo, target and t
   const wt = '/proj/.claude/worktrees/x'
   const w = world(on, {}, { repos: { '/proj': '/proj', [wt]: wt, '/other/.claude/worktrees/y': '/other/.claude/worktrees/y' }, root: wt })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo del worktree ajeno","priority":"low","repo":"/other/.claude/worktrees/y"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo del worktree ajeno","priority":"low","evidence":"lo dejo para otro día","repo":"/other/.claude/worktrees/y"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -449,7 +452,7 @@ const WIN_OTHER = 'C:/Users/x/other'
 test('Windows: a drive-letter session repo and touched repo, HOME from USERPROFILE', async ($, on) => {
   const w = world(on, {}, { repos: { [WIN]: WIN, [WIN_OTHER]: WIN_OTHER, 'C:/Users/x': 'C:/Users/x' }, root: 'C:\\Users\\x\\proj\\src', home: null, userProfile: 'C:\\Users\\x' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","repo":"C:/Users/x/other"},{"text":"Cabo para la sesión","priority":"low"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"C:/Users/x/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"lo dejo para otro día"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
