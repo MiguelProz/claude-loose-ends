@@ -89,3 +89,39 @@ test('a too-short text is not reported as a duplicate', async ($, on) => {
   expect(String(r.result)).toContain('demasiado corto')
   expect(w.saved()).toEqual([])
 })
+
+const conflict = '<<<<<<< HEAD\n{"items":[]}\n=======\n>>>>>>> x\n'
+
+test('prompt.context with an unreadable file adds no block and leaves it untouched', async ($, on) => {
+  const w = world(on, { [PATH]: conflict })
+  on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
+  await w.start($)
+  const r = await $.prompt.context({ blocks: [] })
+  expect(r.blocks).toEqual([])
+  expect(w.fs[PATH]).toBe(conflict)
+})
+
+test('Stop with an unreadable file adds no block and leaves it untouched', async ($, on) => {
+  const w = world(on, { [PATH]: conflict })
+  stopBottom(on)
+  await w.start($)
+  const r = await $.classic.Stop({ stop_hook_active: false })
+  expect(r.block).toBeUndefined()
+  expect(w.fs[PATH]).toBe(conflict)
+})
+
+test('a new note shows a toast with its text', async ($, on) => {
+  const w = world(on)
+  await w.start($)
+  await $.tool.call({ tool: TOOL, text: 'Revisar el sitemap', priority: 'low' })
+  expect(w.toasts).toEqual(['Cabo suelto: Revisar el sitemap'])
+})
+
+test('starting a session twice does not stack the refresh timer', async ($, on) => {
+  const w = world(on)
+  await w.start($)
+  await w.start($)
+  w.state.invalidations = 0
+  await w.clock.advance(60000)
+  expect(w.state.invalidations).toBe(1)
+})

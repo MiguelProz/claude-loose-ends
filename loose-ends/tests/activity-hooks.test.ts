@@ -71,3 +71,38 @@ test('commits are bounded to today even for a resumed session', async ($, on) =>
   const log = w.runs.find(a => a[1] === 'log')
   expect(log).toContain(`--since=${midnight.toISOString()}`)
 })
+
+test('only an answered turn is swept', async ($, on) => {
+  const w = world(on)
+  let calls = 0
+  on('model.complete', () => { calls++; return answered('{"new":[],"resolved":[]}') })
+  done(on)
+  await w.start($)
+  await $.turn.complete({ answer: 'e'.repeat(400), durationMs: 1, isAborted: false, turnId: 't', reason: 'error' })
+  await w.clock.settle()
+  expect(calls).toBe(0)
+  await $.turn.complete({ answer: 'e'.repeat(400), durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+  await w.clock.settle()
+  expect(calls).toBe(1)
+})
+
+test('a git failure after the turn does not reject the hook', async ($, on) => {
+  const w = world(on)
+  done(on)
+  await w.start($)
+  w.flags.failGit = true
+  const r = await $.turn.complete({ answer: 'corto', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
+  expect(r.text).toBe('corto')
+  expect(w.logs.some(l => l.includes('refrescar tras el turno falló'))).toBe(true)
+})
+
+test('turn end refreshes the items from a file edited by hand', async ($, on) => {
+  const w = world(on)
+  done(on)
+  on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
+  await w.start($)
+  w.fs[PATH] = JSON.stringify({ version: 1, items: [{ id: 'h1', text: 'Escrito a mano', priority: 'high', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
+  await $.turn.complete({ answer: 'corto', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
+  const r = await $.prompt.context({ blocks: [] })
+  expect(r.blocks.at(-1).text).toContain('Escrito a mano')
+})

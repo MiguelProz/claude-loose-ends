@@ -15,13 +15,18 @@ let mood = initialMood(0)
 let commits = []
 let discarding = null
 let showOthers = false
+let refreshTimer = null
 
 async function projectRoot($) {
   return await $.session.root()
 }
 
 function background($, promise, what) {
-  promise.catch(err => $.ui.log(`loose-ends: ${what} falló (${err?.message ?? err})`, { to: 'debug' }))
+  promise.catch(async err => {
+    try {
+      await $.ui.log(`loose-ends: ${what} falló (${err?.message ?? err})`, { to: 'debug' })
+    } catch {}
+  })
 }
 
 function clearDiscard(id) {
@@ -183,7 +188,8 @@ export function register(on) {
     mood = initialMood(await $.clock.now())
     plan = []
     commits = []
-    $.clock.every(60000, () => $.ui.invalidate('ui.render'))
+    if (refreshTimer) refreshTimer.cancel()
+    refreshTimer = $.clock.every(60000, () => $.ui.invalidate('ui.render'))
     return next(e)
   })
 
@@ -213,10 +219,14 @@ export function register(on) {
     if (e.agentId) return r
     working = false
     await feel($, { type: 'turn.end' })
-    branch = await readBranch($)
-    await load($)
-    commits = await readCommits($)
-    if (!e.isAborted && shouldSweep(e.answer)) background($, sweep($, e.answer), 'el barrido')
+    try {
+      branch = await readBranch($)
+      await mutate($, list => list)
+      commits = await readCommits($)
+    } catch (err) {
+      $.ui.log(`loose-ends: refrescar tras el turno falló (${err?.message ?? err})`, { to: 'debug' })
+    }
+    if (e.reason === 'answer' && shouldSweep(e.answer)) background($, sweep($, e.answer), 'el barrido')
     return r
   })
 

@@ -120,3 +120,15 @@ test('the discard picker closes once the item is resolved', async ($, on) => {
   expect(await ui.find({ key: 'reason-a1' })).toBeUndefined()
   await ui.unmount()
 })
+
+test('a throwing log inside a failed background action is swallowed', async ($, on) => {
+  const w = world(on, { [PATH]: file })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  await w.start($)
+  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
+  w.flags.failWrites = true
+  w.flags.failLog = true
+  await ui.press({ key: 'queue-a1' })
+  await w.clock.settle()
+  await ui.unmount()
+})
