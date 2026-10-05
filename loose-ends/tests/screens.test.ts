@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { OPEN_PANE_HREF, UNDO_HREF, bandLine, clip, emphasize, recapText, renderBand, renderTriage } from '../lib/screens.mjs'
+import { OPEN_PANE_HREF, UNDO_HREF, ago, bandLine, clip, emphasize, recapText, renderBand, renderPane, renderTriage } from '../lib/screens.mjs'
 
 const fake = new Proxy({}, { get: (_, type) => (props: any) => ({ type, props }) }) as any
 const flat = (node: any): any[] => [node, ...([] as any[]).concat(node?.props?.children ?? []).flatMap(c => (typeof c === 'object' ? flat(c) : []))]
@@ -125,5 +125,120 @@ describe('triage card', () => {
     expect(said('kept')).toBe('Sigue abierto.')
     byKey(renderTriage(fake, 'desktop', card({ state: 'saved' }), actions), 'tri-undo-c1').props.onPress()
     expect(calls).toEqual(['undo c1'])
+  })
+})
+
+describe('pane', () => {
+  const NOW = Date.parse('2026-10-04T10:00:00.000Z')
+  const calls: string[] = []
+  const rec = (name: string) => (...args: any[]) => calls.push([name, ...args].join(' '))
+  const actions = Object.fromEntries(['save', 'reject', 'doNow', 'done', 'dismiss', 'reopen', 'cyclePriority', 'keepFresh', 'confirm', 'keep', 'startEdit', 'saveEdited', 'add', 'push'].map(n => [n, rec(n)])) as any
+  const live = (over = {}) => ({ ...item({ id: 'o1', status: 'open', text: 'Arreglar el envío duplicado de correo', category: 'bug', file: 'lib/facturas.ts', branch: 'main', createdAt: '2026-10-04T09:48:00.000Z' }), stale: false, ...over })
+  const model = (over = {}) => ({
+    now: NOW, branch: 'main', working: false, fileError: null, noRepo: false, repoName: 'web-app', repoPath: '/Users/m/web-app', notice: null, sync: 'synced', editing: null,
+    waiting: [item()], live: [live()], closed: [], learned: 0, ...over,
+  })
+  const pane = (over = {}, surface = 'desktop') => renderPane(fake, surface, model(over), actions)
+
+  test('header: Cuaderno, the repo and where the ref stands', () => {
+    expect(texts(pane())).toEqual(expect.arrayContaining(['Cuaderno', 'web-app', 'Al día con origin']))
+    expect(texts(pane({ sync: 'local' }))).toContain('Solo en este ordenador')
+    expect(texts(pane({ sync: 'ahead' }))).toContain('Cambios sin subir')
+    expect(texts(pane({ sync: 'failed' }))).toContain('No se pudieron subir a origin')
+    expect(byKey(pane({ sync: 'synced' }), 'push-now')).toBeUndefined()
+    calls.length = 0
+    byKey(pane({ sync: 'ahead' }), 'push-now').props.onPress()
+    expect(calls).toEqual(['push'])
+  })
+  test('the field to write one by hand, not on mobile', () => {
+    calls.length = 0
+    const input = byKey(pane(), 'add-item')
+    expect(input.props).toMatchObject({ placeholder: 'Apuntar un cabo…', submitLabel: 'apuntar' })
+    input.props.onSubmit('Cabo a mano')
+    expect(calls).toEqual(['add Cabo a mano'])
+    expect(byKey(pane({}, 'mobile'), 'add-item')).toBeUndefined()
+  })
+  test('sections: bold title and dim count; Por revisar only when there is something', () => {
+    const root = pane({ closed: [item({ id: 'd1', status: 'done', text: 'Hecho ayer', closedAt: '2026-10-03T10:00:00.000Z' })] })
+    const headings = flat(root).filter(n => n?.type === 'Text' && n.props.bold).map(n => n.props.children)
+    expect(headings).toEqual(['Cuaderno', 'Por revisar', 'Abiertos', 'Cerrados esta semana'])
+    expect(flat(pane({ waiting: [] })).filter(n => n?.type === 'Text' && n.props.bold).map(n => n.props.children)).not.toContain('Por revisar')
+  })
+  test('a candidate: text, dim meta, its quote, Guardar and No es un cabo', () => {
+    calls.length = 0
+    const root = pane()
+    expect(texts(root)).toEqual(expect.arrayContaining(['Corregir los revalidatePath del grupo (app)', 'deuda · hace 1 h', '«unos 41 revalidatePath ya no coinciden»']))
+    byKey(root, 'save-c1').props.onPress()
+    byKey(root, 'reject-c1').props.onPress()
+    expect(calls).toEqual(['save c1', 'reject c1'])
+  })
+  test('an open item: colored dot, text, a priority word that cycles, meta, Hacer, Hecho, Descartar', () => {
+    calls.length = 0
+    const root = pane()
+    expect(flat(root).find(n => n?.type === 'Text' && n.props.children === '●')?.props.color).toBe('warning')
+    expect(byKey(root, 'prio-o1').props).toMatchObject({ label: 'normal', plain: true, dimColor: true })
+    expect(texts(root)).toContain('bug · hace 12 min · lib/facturas.ts')
+    for (const key of ['prio-o1', 'now-o1', 'done-o1', 'dismiss-o1', 'edit-o1']) byKey(root, key).props.onPress()
+    expect(calls).toEqual(['cyclePriority o1', 'doNow o1', 'done o1', 'dismiss o1', 'startEdit o1'])
+    expect(byKey(root, 'now-o1').props).toMatchObject({ label: 'Hacer', variant: 'primary', dimColor: false })
+    expect(byKey(pane({ working: true }), 'now-o1').props.dimColor).toBe(true)
+  })
+  test('the dot follows the priority; meta says where it was born, and en curso', () => {
+    expect(flat(pane({ live: [live({ priority: 'high' })] })).find(n => n?.props?.children === '●')?.props.color).toBe('error')
+    expect(flat(pane({ live: [live({ priority: 'low' })] })).find(n => n?.props?.children === '●')?.props.dimColor).toBe(true)
+    expect(texts(pane({ live: [live({ branch: 'fix/qa', status: 'doing' })] }))).toContain('bug · hace 12 min · lib/facturas.ts · nació en fix/qa · en curso')
+  })
+  test('editing swaps the text for an Input, not on mobile', () => {
+    calls.length = 0
+    const input = byKey(pane({ editing: 'o1' }), 'edit-input-o1')
+    expect(input.props.value).toBe('Arreglar el envío duplicado de correo')
+    input.props.onSubmit('Texto nuevo')
+    expect(calls).toEqual(['saveEdited o1 Texto nuevo'])
+    expect(byKey(pane({ editing: 'o1' }, 'mobile'), 'edit-input-o1')).toBeUndefined()
+    expect(byKey(pane({}, 'mobile'), 'edit-o1')).toBeUndefined()
+  })
+  test('a proposed closure shows ¿Resuelto? with its proof and two buttons', () => {
+    calls.length = 0
+    const root = pane({ live: [live({ proposal: { quote: 'ya no llama dos veces', commit: 'a3f9c21', at: '2026-10-04T09:59:00.000Z' } })] })
+    expect(texts(root)).toEqual(expect.arrayContaining(['¿Resuelto? · commit a3f9c21', 'Prueba: «ya no llama dos veces»']))
+    byKey(root, 'confirm-o1').props.onPress()
+    byKey(root, 'keep-o1').props.onPress()
+    expect(calls).toEqual(['confirm o1', 'keep o1'])
+  })
+  test('a stale item asks whether it still holds', () => {
+    calls.length = 0
+    const root = pane({ live: [live({ stale: true })] })
+    expect(texts(root)).toContain('¿Sigue vigente?')
+    byKey(root, 'fresh-o1').props.onPress()
+    expect(calls).toEqual(['keepFresh o1'])
+    expect(byKey(pane(), 'fresh-o1')).toBeUndefined()
+  })
+  test('closed this week: done with its proof, dismissed struck through, ↺ reopens', () => {
+    calls.length = 0
+    const root = pane({ closed: [
+      item({ id: 'd1', status: 'done', text: 'Hojas de globals.css', proof: { quote: 'q', commit: '9e1b7c2' }, closedAt: '2026-10-04T08:00:00.000Z' }),
+      item({ id: 'd2', status: 'dismissed', text: 'Ya no aplica', closedAt: '2026-10-04T08:00:00.000Z' }),
+    ] })
+    expect(texts(root)).toEqual(expect.arrayContaining(['✓ Hojas de globals.css · 9e1b7c2', '✓ Ya no aplica']))
+    expect(flat(root).find(n => n?.props?.children === '✓ Ya no aplica')?.props.strikethrough).toBe(true)
+    byKey(root, 'reopen-d1').props.onPress()
+    expect(calls).toEqual(['reopen d1'])
+  })
+  test('empty, unreadable, outside git, the import notice and what the sweep learned', () => {
+    expect(texts(pane({ waiting: [], live: [] }))).toContain('Nada abierto en este repo.')
+    expect(texts(pane({ fileError: 'json' })).some(t => t.includes('No puedo leer los cabos de /Users/m/web-app (refs/loose-ends): json'))).toBe(true)
+    const outside = pane({ noRepo: true })
+    expect(texts(outside)).toEqual(['Esta sesión no está dentro de un repo git.'])
+    expect(texts(pane({ notice: 'Importados 3 cabos de .claude/loose-ends.json. Ya puedes borrar el fichero del repo.' }))).toContain('Importados 3 cabos de .claude/loose-ends.json. Ya puedes borrar el fichero del repo.')
+    expect(texts(pane({ learned: 9 }))).toContain('El barrido aprende de 9 descartes tuyos')
+    expect(texts(pane({ learned: 1 }))).toContain('El barrido aprende de 1 descarte tuyo')
+    expect(texts(pane()).some(t => t.startsWith('El barrido aprende'))).toBe(false)
+  })
+  test('ago', () => {
+    expect(ago('2026-10-04T10:00:00.000Z', NOW)).toBe('ahora')
+    expect(ago('2026-10-04T09:48:00.000Z', NOW)).toBe('hace 12 min')
+    expect(ago('2026-10-04T07:00:00.000Z', NOW)).toBe('hace 3 h')
+    expect(ago('2026-10-01T10:00:00.000Z', NOW)).toBe('hace 3 d')
+    expect(ago('ayer', NOW)).toBe('')
   })
 })

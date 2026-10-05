@@ -111,3 +111,148 @@ export function renderTriage(el, surface, card, actions) {
   }
   return el.Box({ key: `triage-${id}`, flexDirection: 'column', children: parts })
 }
+
+// The dot of an item: low priority has no color of its own, it is only dim.
+const DOT = { high: { color: 'error' }, medium: { color: 'warning' }, low: { dimColor: true } }
+
+export function ago(iso, now) {
+  const ms = now - Date.parse(iso)
+  if (!Number.isFinite(ms)) return ''
+  const min = Math.max(0, Math.round(ms / 60000))
+  if (min < 1) return 'ahora'
+  if (min < 60) return `hace ${min} min`
+  const h = Math.round(min / 60)
+  if (h < 24) return `hace ${h} h`
+  return `hace ${Math.round(h / 24)} d`
+}
+
+// A section title: bold, then the count in dim.
+function heading(el, title, count) {
+  return el.Box({ flexDirection: 'row', gap: 2, children: [el.Text({ bold: true, children: title }), el.Text({ dimColor: true, children: String(count) })] })
+}
+
+function syncLine(el, m, actions) {
+  if (m.sync === 'synced') return el.Text({ dimColor: true, children: 'Al día con origin' })
+  if (m.sync === 'local') return el.Text({ dimColor: true, children: 'Solo en este ordenador' })
+  if (m.sync !== 'ahead' && m.sync !== 'failed') return null
+  const said = m.sync === 'failed' ? el.Text({ color: 'warning', children: 'No se pudieron subir a origin' }) : el.Text({ dimColor: true, children: 'Cambios sin subir' })
+  return el.Box({ flexDirection: 'row', gap: 1, children: [said, el.Button({ key: 'push-now', label: 'Subir', plain: true, onPress: () => actions.push() })] })
+}
+
+function candidateRow(el, item, m, actions) {
+  const meta = [item.category, ago(item.createdAt, m.now)].filter(Boolean).join(' · ')
+  const parts = [el.Text({ wrap: 'wrap', children: item.text })]
+  if (meta) parts.push(el.Text({ dimColor: true, children: meta }))
+  if (item.evidence) parts.push(el.Text({ dimColor: true, italic: true, wrap: 'wrap', children: `«${item.evidence}»` }))
+  parts.push(
+    el.Box({
+      flexDirection: 'row',
+      gap: 1,
+      flexWrap: 'wrap',
+      children: [
+        el.Button({ key: `save-${item.id}`, label: 'Guardar', variant: 'primary', onPress: () => actions.save(item.id) }),
+        el.Button({ key: `reject-${item.id}`, label: 'No es un cabo', onPress: () => actions.reject(item.id) }),
+      ],
+    }),
+  )
+  return el.Box({ key: `cand-${item.id}`, flexDirection: 'column', marginBottom: 1, children: parts })
+}
+
+function liveRow(el, surface, item, m, actions) {
+  const editable = surface !== 'mobile'
+  const id = item.id
+  const meta = [item.category, ago(item.createdAt, m.now), item.file, item.branch && item.branch !== m.branch ? `nació en ${item.branch}` : '', item.status === 'doing' ? 'en curso' : '']
+    .filter(Boolean)
+    .join(' · ')
+  const parts = []
+  if (editable && m.editing === id) {
+    parts.push(el.Input({ key: `edit-input-${id}`, value: item.text, submitLabel: 'guardar', onSubmit: value => actions.saveEdited(id, value) }))
+  } else {
+    parts.push(el.Box({ flexDirection: 'row', gap: 1, children: [el.Text({ ...(DOT[item.priority] ?? DOT.medium), children: '●' }), el.Text({ wrap: 'wrap', children: item.text })] }))
+  }
+  const line = [el.Button({ key: `prio-${id}`, label: PRIORITY_WORD[item.priority] ?? 'normal', plain: true, dimColor: true, onPress: () => actions.cyclePriority(id) })]
+  if (meta) line.push(el.Text({ dimColor: true, children: meta }))
+  if (editable) line.push(el.Button({ key: `edit-${id}`, label: 'editar', plain: true, dimColor: true, onPress: () => actions.startEdit(id) }))
+  parts.push(el.Box({ flexDirection: 'row', gap: 1, flexWrap: 'wrap', children: line }))
+  if (item.proposal) {
+    const head = ['¿Resuelto?', item.proposal.commit ? `commit ${item.proposal.commit}` : ''].filter(Boolean).join(' · ')
+    parts.push(el.Text({ color: 'success', children: head }))
+    parts.push(el.Text({ dimColor: true, italic: true, wrap: 'wrap', children: `Prueba: «${item.proposal.quote}»` }))
+    parts.push(
+      el.Box({
+        flexDirection: 'row',
+        gap: 1,
+        flexWrap: 'wrap',
+        children: [
+          el.Button({ key: `confirm-${id}`, label: 'Sí, cerrar', variant: 'primary', onPress: () => actions.confirm(id) }),
+          el.Button({ key: `keep-${id}`, label: 'Sigue abierto', onPress: () => actions.keep(id) }),
+        ],
+      }),
+    )
+  }
+  if (item.stale) {
+    parts.push(
+      el.Box({
+        flexDirection: 'row',
+        gap: 1,
+        children: [el.Text({ color: 'warning', children: '¿Sigue vigente?' }), el.Button({ key: `fresh-${id}`, label: 'Sí', plain: true, onPress: () => actions.keepFresh(id) })],
+      }),
+    )
+  }
+  parts.push(
+    el.Box({
+      flexDirection: 'row',
+      gap: 1,
+      flexWrap: 'wrap',
+      children: [
+        el.Button({ key: `now-${id}`, label: 'Hacer', variant: 'primary', dimColor: m.working, onPress: () => actions.doNow(id) }),
+        el.Button({ key: `done-${id}`, label: 'Hecho', onPress: () => actions.done(id) }),
+        el.Button({ key: `dismiss-${id}`, label: 'Descartar', plain: true, onPress: () => actions.dismiss(id) }),
+      ],
+    }),
+  )
+  return el.Box({ key: `item-${id}`, flexDirection: 'column', marginBottom: 1, children: parts })
+}
+
+function closedRow(el, item, actions) {
+  const proof = item.proof?.commit ? ` · ${item.proof.commit}` : item.proof ? ' · con prueba' : ''
+  const dismissed = item.status === 'dismissed'
+  return el.Box({
+    key: `closed-${item.id}`,
+    flexDirection: 'row',
+    gap: 1,
+    children: [
+      el.Text({ dimColor: dismissed, strikethrough: dismissed, children: `✓ ${item.text}${proof}` }),
+      el.Button({ key: `reopen-${item.id}`, label: '↺', plain: true, dimColor: true, onPress: () => actions.reopen(item.id) }),
+    ],
+  })
+}
+
+export function renderPane(el, surface, m, actions) {
+  const out = []
+  if (m.fileError) out.push(el.Text({ color: 'warning', wrap: 'wrap', children: `No puedo leer los cabos de ${m.repoPath} (refs/loose-ends): ${m.fileError}. El panel se recupera solo en cuanto se puedan leer.` }))
+  if (m.noRepo) {
+    out.push(el.Text({ dimColor: true, children: 'Esta sesión no está dentro de un repo git.' }))
+    return el.Box({ flexDirection: 'column', children: out })
+  }
+  const sync = syncLine(el, m, actions)
+  out.push(el.Box({ flexDirection: 'row', gap: 2, flexWrap: 'wrap', children: [el.Text({ bold: true, children: 'Cuaderno' }), el.Text({ dimColor: true, children: m.repoName }), ...(sync ? [sync] : [])] }))
+  if (m.notice) out.push(el.Text({ dimColor: true, wrap: 'wrap', children: m.notice }))
+  if (surface !== 'mobile') out.push(el.Input({ key: 'add-item', placeholder: 'Apuntar un cabo…', submitLabel: 'apuntar', onSubmit: value => actions.add(value) }))
+
+  if (m.waiting.length) {
+    out.push(heading(el, 'Por revisar', m.waiting.length))
+    for (const item of m.waiting) out.push(candidateRow(el, item, m, actions))
+  }
+
+  out.push(heading(el, 'Abiertos', m.live.length))
+  if (!m.live.length) out.push(el.Text({ dimColor: true, children: 'Nada abierto en este repo.' }))
+  for (const item of m.live) out.push(liveRow(el, surface, item, m, actions))
+
+  if (m.closed.length) {
+    out.push(heading(el, 'Cerrados esta semana', m.closed.length))
+    for (const item of m.closed) out.push(closedRow(el, item, actions))
+  }
+  if (m.learned) out.push(el.Text({ dimColor: true, children: `El barrido aprende de ${plural(m.learned, 'descarte tuyo', 'descartes tuyos')}` }))
+  return el.Box({ flexDirection: 'column', children: out })
+}
