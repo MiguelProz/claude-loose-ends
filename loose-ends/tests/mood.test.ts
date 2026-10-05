@@ -58,9 +58,16 @@ describe('chispa poses', () => {
       expect(TERMINAL_FACES[mood]).toBeTruthy()
     }
   })
-  test('note holds a card; working draws the keyboard of coding', () => {
+  test('exactly six moods; note holds a card; working types on a keyboard; unknown falls back to idle', () => {
+    expect(MOODS).toEqual(['note', 'worried', 'celebrate', 'working', 'idle', 'sleeping'])
+    for (const mood of MOODS) {
+      expect(chispaSvg(mood)).toContain('repeatCount="indefinite"')
+      expect(MOOD_LABELS[mood]).toBeTruthy()
+      expect(TERMINAL_FACES[mood]).toBeTruthy()
+    }
     expect(chispaSvg('note')).toContain('#FDCBB2')
     expect(chispaSvg('idle')).not.toContain('#FDCBB2')
-    expect(chispaSvg('working')).toBe(chispaSvg('coding'))
+    expect(chispaSvg('working')).toContain('#4B5058')
+    expect(chispaSvg('coding')).toBe(chispaSvg('idle'))
   })
 })

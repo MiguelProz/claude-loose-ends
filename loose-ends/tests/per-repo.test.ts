@@ -24,50 +24,48 @@ test('a note with repo goes to that repo, not to the session file', async ($, on
   const w = world(on, {}, { repos: REPOS, branches: { '/other': 'feat/o' }, refs: { [ROOT]: own } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo del otro repo', priority: 'low', repo: '/other/src/a.ts' })
-  expect(String(r.result)).toMatch(/^Apuntado \(\w{8}\): Cabo del otro repo$/)
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo del otro repo', priority: 'low', repo: '/other/src/a.ts' })
+  expect(String(r.result)).toMatch(/^Propuesto como cabo \(\w{8}\): Cabo del otro repo\. El usuario lo confirmará\.$/)
   expect(w.savedAt(OTHER)).toHaveLength(1)
-  expect(w.savedAt(OTHER)[0]).toMatchObject({ text: 'Cabo del otro repo', source: 'tool', branch: 'feat/o', status: 'open' })
+  expect(w.savedAt(OTHER)[0]).toMatchObject({ text: 'Cabo del otro repo', source: 'tool', branch: 'feat/o', status: 'candidate' })
   expect(w.refText(ROOT)).toBe(own)
   expect(w.writes).toEqual([OTHER])
-  expect(w.toasts).toEqual(['Cabo suelto (other): Cabo del otro repo'])
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
-  expect((await band.find({ key: 'open-pane' }))?.text).toBe('1 pendiente · [Ver](file:///loose-ends/ver)')
+  expect((await band.find({ key: 'band-line' }))?.text).toBe('1 abierto · [Ver](file:///loose-ends/ver)')
   await band.unmount()
 })
 
 test('repo pointing at a folder of the session repo writes the session file', async ($, on) => {
   const w = world(on, {}, { repos: REPOS })
   await w.start($)
-  await $.tool.call({ tool: TOOL, text: 'Cabo de la sesión', priority: 'low', repo: '/proj/src' })
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo de la sesión', priority: 'low', repo: '/proj/src' })
   expect(w.saved()).toHaveLength(1)
-  expect(w.toasts).toEqual(['Cabo suelto: Cabo de la sesión'])
+  expect(w.saved()[0].status).toBe('candidate')
 })
 
 test('a repo that is not in git writes nothing and says so', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: own } })
   await w.start($)
   for (const repo of ['/nowhere/x', 'relative/dir']) {
-    const r = await $.tool.call({ tool: TOOL, text: 'Cabo perdido', priority: 'low', repo })
-    expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+    const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo perdido', priority: 'low', repo })
+    expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha propuesto.')
   }
   expect(w.writes).toEqual([])
-  expect(w.toasts).toEqual([])
 })
 
 test('an unreadable file in the other repo is not overwritten', async ($, on) => {
   const broken = '<<<<<<< HEAD\n{}\n=======\n>>>>>>> x\n'
   const w = world(on, {}, { repos: REPOS, refs: { [OTHER]: broken } })
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo en otro', priority: 'low', repo: '/other' })
-  expect(String(r.result)).toContain('ilegible')
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en otro', priority: 'low', repo: '/other' })
+  expect(String(r.result)).toContain('no se pueden leer')
   expect(w.refText(OTHER)).toBe(broken)
 })
 
 test('the session repo is the toplevel of the root, not the root itself', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, root: '/proj/packages/app' })
   await w.start($)
-  await $.tool.call({ tool: TOOL, text: 'Cabo desde un subdirectorio', priority: 'low' })
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo desde un subdirectorio', priority: 'low' })
   expect(w.writes).toEqual([ROOT])
 })
 
@@ -88,7 +86,7 @@ test('the session repo is refreshed after each turn', async ($, on) => {
 test('the sweep files a new item in a repo touched this turn when Haiku names it', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, branches: { '/other': 'feat/o' }, refs: { [ROOT]: own } })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":["a1"]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"y el test lo omito por ahora"}]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -98,13 +96,13 @@ test('the sweep files a new item in a repo touched this turn when Haiku names it
   await w.clock.settle()
   expect(asked).toContain('Repos candidatos:\n- proj: /proj\n- other: /other')
   expect(w.savedAt(OTHER).map((i: any) => [i.text, i.branch, i.source])).toEqual([['Cabo para el otro', 'feat/o', 'sweep']])
-  expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'done'], ['Cabo para la sesión', 'open']])
-  expect(w.toasts).toContain('Cabo suelto (other): Cabo para el otro')
+  expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Cabo para la sesión', 'candidate']])
+  expect(w.saved()[0].proposal.quote).toBe('y el test lo omito por ahora')
 })
 
 test('the sweep falls back to the session repo when the path is not a candidate', async ($, on) => {
   const w = world(on, {}, { repos: REPOS })
-  on('model.complete', () => answered('{"new":[{"text":"Cabo con repo inventado","priority":"low","evidence":"lo dejo para otro día","repo":"/other"}],"resolved":[]}'))
+  on('model.complete', () => answered('{"new":[{"text":"Cabo con repo inventado","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"}],"resolved":[]}'))
   tools(on)
   turns(on)
   await w.start($)
@@ -193,34 +191,31 @@ test('subagent tool calls do not mark repos', async ($, on) => {
 test('outside git nothing touches the session filesystem', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, root: '/home/m' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo sin repo","priority":"high","evidence":"lo dejo para otro día"}],"resolved":[]}') })
-  on('classic.Stop', () => ({}))
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo sin repo","category":"deuda","priority":"high","evidence":"lo dejo para otro día"}],"resolved":[]}') })
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   tools(on)
   turns(on)
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo sin sitio', priority: 'low' })
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo sin sitio', priority: 'low' })
   expect(r.result).toBe('Esta sesión no está en un repo git: indica "repo" con la ruta del repo del cabo.')
   await startTurn($)
   await endTurn($)
   await w.clock.settle()
   expect(asked).toBe('')
-  expect((await $.classic.Stop({ stop_hook_active: false })).block).toBeUndefined()
   expect((await $.prompt.context({ blocks: [] })).blocks).toEqual([])
   expect(w.writes).toEqual([])
   expect(w.gitReads).toEqual([])
-  expect(w.toasts).toEqual([])
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
   expect(await band.find({ type: 'Svg' })).toBeDefined()
-  expect(await band.find({ key: 'open-pane' })).toBeUndefined()
+  expect(await band.find({ key: 'band-line' })).toBeUndefined()
   await band.unmount()
 })
 
 test('outside git the sweep writes only items whose repo is a touched one', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, root: '/home/m' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo sin repo","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo sin repo","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -236,8 +231,8 @@ test('outside git the sweep writes only items whose repo is a touched one', asyn
 test('outside git a note with a valid repo writes only there', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, root: '/home/m' })
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo con ruta', priority: 'low', repo: '/other' })
-  expect(String(r.result)).toMatch(/^Apuntado/)
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo con ruta', priority: 'low', repo: '/other' })
+  expect(String(r.result)).toMatch(/^Propuesto como cabo/)
   expect(w.writes).toEqual([OTHER])
   expect(w.gitReads).not.toContain(ROOT)
 })
@@ -248,7 +243,7 @@ test('outside git the pane says so in place of the lists', async ($, on) => {
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
   expect(await ui.find({ type: 'Text', text: 'Esta sesión no está dentro de un repo git.' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Pendientes/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Abiertos/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -257,7 +252,7 @@ test('in a repo the pane keeps its lists', async ($, on) => {
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /Pendientes/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Abiertos/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /no está dentro de un repo git/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -275,22 +270,10 @@ test('when git cannot answer after a turn the session keeps its repo', async ($,
 
 const plugin = '/Users/m/.claude/plugins/cache/p'
 
-test('outside git the band keeps the plan counter but shows no loose-end counters', async ($, on) => {
-  const w = world(on, {}, { repos: REPOS, root: '/home/m' })
-  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
-  on('tool.call', ($: any, e: any) => (e.tool === 'TaskCreate' ? { result: { task: { id: 't1', subject: e.subject } } } : { result: {} }))
-  await w.start($)
-  await $.tool.call({ tool: 'TaskCreate', subject: 'Primera tarea', description: 'd' })
-  const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
-  expect((await band.find({ key: 'open-pane' }))?.text).toBe('plan 0/1 · [Ver](file:///loose-ends/ver)')
-  expect(await band.find({ type: 'Text', text: /pendiente|cola/ })).toBeUndefined()
-  await band.unmount()
-})
-
 test('a repo under .claude is never a candidate nor written', async ($, on) => {
   const w = world(on, {}, { repos: { ...REPOS, [plugin]: plugin } })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered(`{"new":[{"text":"Cabo del plugin","priority":"low","evidence":"lo dejo para otro día","repo":"${plugin}"}],"resolved":[]}`) })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered(`{"new":[{"text":"Cabo del plugin","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"${plugin}"}],"resolved":[]}`) })
   tools(on)
   turns(on)
   await w.start($)
@@ -307,21 +290,21 @@ test('a repo under .claude is never a candidate nor written', async ($, on) => {
 test('the tool refuses a repo under .claude', async ($, on) => {
   const w = world(on, {}, { repos: { ...REPOS, [plugin]: plugin } })
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo del plugin', priority: 'low', repo: `${plugin}/skills` })
-  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo del plugin', priority: 'low', repo: `${plugin}/skills` })
+  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha propuesto.')
   expect(w.writes).toEqual([])
 })
 
 test('a session whose repo is the home directory behaves as outside git', async ($, on) => {
   const w = world(on, {}, { repos: { '/Users/m': '/Users/m', '/other': '/other' }, root: '/Users/m/work' })
-  on('model.complete', () => answered('{"new":[{"text":"Cabo suelto en casa","priority":"low","evidence":"lo dejo para otro día"}],"resolved":[]}'))
+  on('model.complete', () => answered('{"new":[{"text":"Cabo suelto en casa","category":"deuda","priority":"low","evidence":"lo dejo para otro día"}],"resolved":[]}'))
   tools(on)
   turns(on)
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low' })
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en casa', priority: 'low' })
   expect(String(r.result)).toContain('no está en un repo git')
-  const home = await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low', repo: '/Users/m/x' })
-  expect(home.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+  const home = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en casa', priority: 'low', repo: '/Users/m/x' })
+  expect(home.result).toBe('La ruta no está dentro de un repo git: no se ha propuesto.')
   await startTurn($)
   await endTurn($)
   await w.clock.settle()
@@ -332,7 +315,7 @@ test('a session whose repo is the home directory behaves as outside git', async 
 test('with HOME unknown only the .claude rule applies', async ($, on) => {
   const w = world(on, {}, { repos: { '/Users/m': '/Users/m' }, root: '/Users/m/work', home: null })
   await w.start($)
-  await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low' })
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en casa', priority: 'low' })
   expect(w.writes).toEqual(['/Users/m'])
 })
 
@@ -367,35 +350,38 @@ test('the failure message names the error of the repo it wrote to', async ($, on
   const conflict = '<<<<<<< HEAD\n{}\n=======\n>>>>>>> x\n'
   const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: conflict, [OTHER]: '{ roto' } })
   await w.start($)
-  const foreign = await $.tool.call({ tool: TOOL, text: 'Cabo en otro', priority: 'low', repo: '/other' })
+  const foreign = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en otro', priority: 'low', repo: '/other' })
   expect(String(foreign.result)).toContain('/other (refs/loose-ends)')
   expect(String(foreign.result)).toContain('(json)')
-  const own = await $.tool.call({ tool: TOOL, text: 'Cabo en la sesión', priority: 'low' })
+  const own = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en la sesión', priority: 'low' })
   expect(String(own.result)).toContain('(conflict)')
   expect(String(own.result)).not.toContain('/other')
   w.setRef(OTHER, JSON.stringify({ version: 1, items: [] }))
-  const fixed = await $.tool.call({ tool: TOOL, text: 'Cabo en otro', priority: 'low', repo: '/other' })
-  expect(String(fixed.result)).toMatch(/^Apuntado/)
+  const fixed = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en otro', priority: 'low', repo: '/other' })
+  expect(String(fixed.result)).toMatch(/^Propuesto como cabo/)
 })
 
 test('after the root moves, a note to the new session repo is a session note', async ($, on) => {
   const w = world(on, {}, { repos: REPOS })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   turns(on)
   await w.start($)
   w.setRoot('/other')
   await endTurn($)
   await w.clock.settle()
-  await $.tool.call({ tool: TOOL, text: 'Cabo en la nueva raíz', priority: 'low', repo: '/other' })
-  expect(w.toasts).toEqual(['Cabo suelto: Cabo en la nueva raíz'])
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en la nueva raíz', priority: 'low', repo: '/other' })
   expect(w.savedAt(OTHER)).toHaveLength(1)
+  const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
+  expect((await band.find({ key: 'band-line' }))?.text).toBe('1 por revisar · [Revisar](file:///loose-ends/ver)')
+  await band.unmount()
 })
 
 test('git throwing at start leaves the session outside git, and the tool says the path is not a repo', async ($, on) => {
   const w = world(on, {}, { repos: REPOS })
   await w.start($)
   w.flags.throwGit = true
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo sin git', priority: 'low', repo: '/other' })
-  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo sin git', priority: 'low', repo: '/other' })
+  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha propuesto.')
   expect(w.writes).toEqual([])
 })
 
@@ -403,7 +389,7 @@ test('git throwing during start leaves the session without a repo and nothing is
   const w = world(on, {}, { repos: REPOS })
   w.flags.throwGit = true
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo sin git', priority: 'low' })
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo sin git', priority: 'low' })
   expect(String(r.result)).toContain('no está en un repo git')
   expect(w.writes).toEqual([])
 })
@@ -411,14 +397,14 @@ test('git throwing during start leaves the session without a repo and nothing is
 test('a folder that does not exist yet resolves through its nearest existing parent', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, missing: ['/other/new'] })
   await w.start($)
-  await $.tool.call({ tool: TOOL, text: 'Cabo en carpeta futura', priority: 'low', repo: '/other/new/deep' })
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en carpeta futura', priority: 'low', repo: '/other/new/deep' })
   expect(w.writes).toEqual([OTHER])
 })
 
 test('a file path given as repo resolves through its folder', async ($, on) => {
   const w = world(on, {}, { repos: REPOS })
   await w.start($)
-  await $.tool.call({ tool: TOOL, text: 'Cabo por fichero', priority: 'low', repo: '/other/src/a.ts' })
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo por fichero', priority: 'low', repo: '/other/src/a.ts' })
   expect(w.runs.filter(a => a.includes('--show-toplevel')).map(a => a[2])).toContain('/other/src/a.ts')
   expect(w.writes).toEqual([OTHER])
 })
@@ -427,12 +413,12 @@ test('a Claude Code worktree under .claude is a valid session repo, target and t
   const wt = '/proj/.claude/worktrees/x'
   const w = world(on, {}, { repos: { '/proj': '/proj', [wt]: wt, '/other/.claude/worktrees/y': '/other/.claude/worktrees/y' }, root: wt })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo del worktree ajeno","priority":"low","evidence":"lo dejo para otro día","repo":"/other/.claude/worktrees/y"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo del worktree ajeno","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other/.claude/worktrees/y"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
-  await $.tool.call({ tool: TOOL, text: 'Cabo en el worktree', priority: 'low' })
-  await $.tool.call({ tool: TOOL, text: 'Cabo por ruta', priority: 'low', repo: '/other/.claude/worktrees/y/src' })
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en el worktree', priority: 'low' })
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo por ruta', priority: 'low', repo: '/other/.claude/worktrees/y/src' })
   await startTurn($)
   await $.tool.call({ tool: 'Edit', file_path: '/other/.claude/worktrees/y/a.ts' })
   await endTurn($)
@@ -445,8 +431,8 @@ test('a Claude Code worktree under .claude is a valid session repo, target and t
 test('with HOME unknown a plugin repo under .claude/plugins is still ignored', async ($, on) => {
   const w = world(on, {}, { repos: { ...REPOS, [plugin]: plugin }, home: null })
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo del plugin', priority: 'low', repo: plugin })
-  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha apuntado.')
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo del plugin', priority: 'low', repo: plugin })
+  expect(r.result).toBe('La ruta no está dentro de un repo git: no se ha propuesto.')
 })
 
 const WIN = 'C:/Users/x/proj'
@@ -455,7 +441,7 @@ const WIN_OTHER = 'C:/Users/x/other'
 test('Windows: a drive-letter session repo and touched repo, HOME from USERPROFILE', async ($, on) => {
   const w = world(on, {}, { repos: { [WIN]: WIN, [WIN_OTHER]: WIN_OTHER, 'C:/Users/x': 'C:/Users/x' }, root: 'C:\\Users\\x\\proj\\src', home: null, userProfile: 'C:\\Users\\x' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"C:/Users/x/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"C:/Users/x/other"},{"text":"Cabo para la sesión","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -466,15 +452,15 @@ test('Windows: a drive-letter session repo and touched repo, HOME from USERPROFI
   expect(asked).toContain(`Repos candidatos:\n- proj: ${WIN}\n- other: ${WIN_OTHER}`)
   expect(w.savedAt(WIN).map((i: any) => i.text)).toEqual(['Cabo para la sesión'])
   expect(w.savedAt(WIN_OTHER).map((i: any) => i.text)).toEqual(['Cabo para el otro'])
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo por ruta', priority: 'low', repo: 'C:\\Users\\x\\other\\src\\b.ts' })
-  expect(String(r.result)).toMatch(/^Apuntado/)
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo por ruta', priority: 'low', repo: 'C:\\Users\\x\\other\\src\\b.ts' })
+  expect(String(r.result)).toMatch(/^Propuesto como cabo/)
   expect(w.writes.every((p: string) => !p.includes('\\'))).toBe(true)
 })
 
 test('Windows: the home directory as a repo is outside git', async ($, on) => {
   const w = world(on, {}, { repos: { 'C:/Users/x': 'C:/Users/x' }, root: 'C:\\Users\\x\\work', home: null, userProfile: 'C:\\Users\\x' })
   await w.start($)
-  const r = await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low' })
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en casa', priority: 'low' })
   expect(String(r.result)).toContain('no está en un repo git')
   expect(w.writes).toEqual([])
 })
@@ -484,7 +470,7 @@ test('an unreadable session file is flagged in the band and named by its absolut
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
-  expect((await band.find({ key: 'open-pane' }))?.text).toBe('No puedo leer loose-ends.json · [Ver](file:///loose-ends/ver)')
+  expect((await band.find({ key: 'band-line' }))?.text).toBe('No puedo leer los cabos · [Ver](file:///loose-ends/ver)')
   await band.unmount()
   const pane = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
   expect((await pane.find({ type: 'Text', text: /No puedo leer/ }))?.text).toContain('/proj (refs/loose-ends)')
@@ -506,29 +492,3 @@ test('leaving git after a turn empties the band and the context', async ($, on) 
   await band.unmount()
 })
 
-test('the pane folds the other branches and the done list when the session repo changes', async ($, on) => {
-  const stale = JSON.stringify({ version: 1, items: [
-    { id: 'a1', text: 'Cabo de la sesión', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' },
-    { id: 'o1', text: 'De otra rama', priority: 'low', status: 'open', branch: 'feat/x', createdAt: '2026-10-04T09:00:00.000Z' },
-  ] })
-  const w = world(on, {}, { repos: REPOS, startedAt: Date.parse('2026-10-04T09:00:00.000Z'), log: 'abc1234\tfeat: algo\n', refs: { [ROOT]: stale, [OTHER]: stale } })
-  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
-  turns(on)
-  await w.start($)
-  await endTurn($)
-  await w.clock.settle()
-  const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
-  await ui.press({ key: 'toggle-others' })
-  await ui.press({ key: 'toggle-done' })
-  await ui.redraw()
-  expect(await ui.find({ type: 'Text', text: /De otra rama/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /abc1234/ })).toBeDefined()
-  w.setRoot('/other')
-  await endTurn($)
-  await w.clock.settle()
-  await ui.redraw()
-  expect(await ui.find({ key: 'toggle-others' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /De otra rama/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /abc1234/ })).toBeUndefined()
-  await ui.unmount()
-})

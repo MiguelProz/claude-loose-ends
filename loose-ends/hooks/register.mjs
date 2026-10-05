@@ -1,18 +1,28 @@
-import { FILE, active, addItem, close, counts, dueReminders, expireReminded, markReminded, parseFile, queue, reopen, serialize, setPriority } from '../lib/store.mjs'
-import { FLASH_MS, bashFailed, classifyBash, initialMood, isPush, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
-import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
-import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
-import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, repoName } from '../lib/repos.mjs'
-import { renderBand, renderPane } from '../lib/view.mjs'
-import { FETCH_ARGS, GIT_ENV, HASH_ARGS, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS, blobArgs, commitArgs, firstLine, hasOrigin, mergeItems, pushArgs, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
+import {
+  FETCH_ARGS, GIT_ENV, HASH_ARGS, LAST_COMMIT_ARGS, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS,
+  blobArgs, commitArgs, firstLine, hasOrigin, mergeItems, pushArgs, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
+} from '../lib/refstore.mjs'
+import {
+  LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
+  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, topUrgent, touch,
+} from '../lib/items.mjs'
+import { rejectReason } from '../lib/filter.mjs'
+import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
+import {
+  NOT_A_REPO, NO_GIT_NOTE, SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, TOOL_TOO_SHORT,
+  doNowText, formatContext, toolProposed, toolRejected, toolUnreadable,
+} from '../lib/texts.mjs'
+import { FLASH_MS, bashFailed, chispaMood, isCommit, isPush } from '../lib/mood.mjs'
+import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, relativeTo, repoName } from '../lib/repos.mjs'
+import { emphasize, renderBand, renderPane, renderTriage } from '../lib/screens.mjs'
 
-const NO_GIT_NOTE = 'Esta sesión no está en un repo git: indica "repo" con la ruta del repo del cabo.'
-const NOT_A_REPO = 'La ruta no está dentro de un repo git: no se ha apuntado.'
 const MAX_WALK = 3
 const MAX_CACHE = 500
 const MAX_PATHS_PER_CALL = 10
 const MAX_TOUCHED = 6
 const MAX_TRIES = 3
+const NEXT_PRIORITY = { high: 'medium', medium: 'low', low: 'high' }
+const SYNC_QUESTION = '¿Subo también los cabos sueltos de este repo a origin? Viajan en refs/loose-ends, fuera de tus ramas.'
 
 let items = []
 let fileError = null
@@ -24,26 +34,22 @@ let touched = new Set()
 let touchChain = Promise.resolve()
 const repoCache = new Map()
 let writeChain = Promise.resolve()
-let sessionStart = 0
 let working = false
-let plan = []
-let mood = initialMood(0)
-let commits = []
-let discarding = null
-// The item whose evidence and secondary actions the pane shows; one at a time.
-let expanded = null
-let showOthers = false
-let showDone = false
-let refreshTimer = null
-// What the pane says once about the import of the 0.3 file; null when there is nothing to say.
+let lastActivity = 0
+let flashUntil = 0
+// The last item the person closed, as it was before, for the band's Deshacer while it lasts.
+let justClosed = null
+// The item whose text an Input edits, in the pane or in its card; one at a time.
+let editing = null
+// What the pane says once about the import of the 0.3 file.
 let notice = null
-// Where the session repo's ref stands against origin: 'local' (no origin), 'synced', 'ahead' or 'failed'.
+// Where the session repo's ref stands against origin: 'local', 'synced', 'ahead' or 'failed'.
 let sync = null
-const SYNC_QUESTION = '¿Subo también los cabos sueltos de este repo a origin? Viajan en refs/loose-ends, fuera de tus ramas.'
-
-async function projectRoot($) {
-  return await $.session.root()
-}
+// A commit made during the current turn, the proof of what the sweep proposes to close.
+let turnCommit = null
+// Cards the person answered under a message: id -> { kind, quote, state, previous }.
+const triage = new Map()
+let refreshTimer = null
 
 async function logDebug($, message) {
   try {
@@ -64,11 +70,6 @@ async function guarded($, what, step) {
   }
 }
 
-function clearDiscard(id) {
-  if (discarding === id) discarding = null
-  if (expanded === id) expanded = null
-}
-
 async function nowIso($) {
   return new Date(await $.clock.now()).toISOString()
 }
@@ -81,13 +82,13 @@ async function readRef($, root, ref = REF) {
   if (!sha) return { ok: false, error: 'git' }
   const blob = await $.process.run(['git', '-C', root, ...blobArgs(sha)])
   if (blob.exitCode !== 0) return { ok: false, error: 'blob' }
-  const parsed = parseFile(blob.stdout)
+  const parsed = parseItems(blob.stdout)
   return parsed.ok ? { ...parsed, sha } : parsed
 }
 
-// Points the ref at a new commit holding `items`; false when another session moved it since `prev` was read.
-async function writeRef($, root, items, prev) {
-  const blob = await $.process.run(['git', '-C', root, ...HASH_ARGS], { stdin: serialize(items) })
+// Points the ref at a new commit holding `list`; false when another session moved it since `prev` was read.
+async function writeRef($, root, list, prev) {
+  const blob = await $.process.run(['git', '-C', root, ...HASH_ARGS], { stdin: serializeItems(list) })
   const blobSha = blob.exitCode === 0 ? firstLine(blob.stdout) : null
   if (!blobSha) throw new Error('git hash-object falló')
   const tree = await $.process.run(['git', '-C', root, ...TREE_ARGS], { stdin: treeInput(blobSha) })
@@ -108,7 +109,7 @@ async function commitItems($, root, fn) {
     if (!read.ok) return { error: read.error }
     const result = fn(read.items)
     const nextItems = Array.isArray(result) ? result : result.items
-    if (serialize(nextItems) === serialize(read.items)) return { result, items: read.items }
+    if (serializeItems(nextItems) === serializeItems(read.items)) return { result, items: read.items }
     if (await writeRef($, root, nextItems, read.sha)) return { result, items: nextItems }
   }
   return { error: 'busy' }
@@ -154,8 +155,7 @@ async function mutateNow($, fn, root, report) {
   if (isSession) {
     fileError = null
     items = done.items
-    if (discarding && !active(items).some(i => i.id === discarding)) discarding = null
-    if (expanded && !active(items).some(i => i.id === expanded)) expanded = null
+    if (editing && !items.some(i => i.id === editing)) editing = null
     $.ui.invalidate('ui.render')
   }
   return done.result
@@ -165,6 +165,96 @@ async function mutate($, fn, root, report) {
   const run = writeChain.then(() => mutateNow($, fn, root, report))
   writeChain = run.catch(() => {})
   return run
+}
+
+async function toplevelOf($, dir) {
+  const r = await $.process.run(['git', '-C', dir, 'rev-parse', '--show-toplevel'])
+  if (r.exitCode !== 0) return null
+  const top = typeof r.stdout === 'string' ? r.stdout.trim() : ''
+  if (!isAbsolutePath(top)) throw new Error('git no dio la raíz del repo')
+  return normalizePath(top)
+}
+
+// Toplevel of the git repo a path belongs to, or null (also when git cannot run). A file path starts at its
+// directory; anything else starts at itself. Climbs a few levels for folders that do not exist yet.
+async function repoOf($, path, { file = false, fresh = false } = {}) {
+  if (!isAbsolutePath(path)) return null
+  let dir = normalizePath(path)
+  if (file) dir = parentPath(dir)
+  const tried = []
+  for (let depth = 0; depth < MAX_WALK; depth++) {
+    if (fresh) repoCache.delete(dir)
+    let top = repoCache.get(dir)
+    if (top === undefined) {
+      try {
+        top = await toplevelOf($, dir)
+      } catch {
+        return null
+      }
+      if (repoCache.size >= MAX_CACHE) repoCache.clear()
+      repoCache.set(dir, top)
+    }
+    if (top) {
+      for (const d of tried) repoCache.set(d, top)
+      return isIgnoredRepo(top, await homeDir($)) ? null : top
+    }
+    tried.push(dir)
+    const parent = parentPath(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+  return null
+}
+
+async function homeDir($) {
+  if (homePath === undefined) {
+    try {
+      const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
+      homePath = home ? normalizePath(home) : null
+    } catch {
+      homePath = null
+    }
+  }
+  return homePath
+}
+
+// The session's repo from its root, read afresh; throws when git cannot say, so callers keep the last answer.
+// A repo under `.claude` or the home directory counts as no repo.
+async function resolveSessionRepo($) {
+  const session = await $.session.root()
+  const root = isAbsolutePath(session) ? normalizePath(session) : session
+  repoCache.delete(root)
+  const top = await toplevelOf($, root)
+  repoCache.set(root, top)
+  const before = sessionRepo
+  sessionRepo = top && !isIgnoredRepo(top, await homeDir($)) ? top : null
+  if (sessionRepo !== before) {
+    // nothing of the old repo may be drawn while the new one loads
+    items = []
+    fileError = null
+    editing = null
+    justClosed = null
+    notice = null
+    sync = null
+    triage.clear()
+    $.ui.invalidate('ui.render')
+  }
+}
+
+// On the write chain, so a write never straddles a change of session repo.
+async function refreshSessionRepo($) {
+  const run = writeChain.then(() => resolveSessionRepo($))
+  writeChain = run.catch(() => {})
+  return run
+}
+
+async function branchOf($, dir) {
+  const r = await $.process.run(['git', '-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'])
+  return r.exitCode === 0 ? r.stdout.trim() : null
+}
+
+async function readBranch($) {
+  return sessionRepo ? branchOf($, sessionRepo) : null
 }
 
 async function readSha($, root, ref) {
@@ -244,161 +334,59 @@ async function afterUserPush($) {
 
 // Imports the items a 0.3 version left in <root>/.claude/loose-ends.json whose ids the ref lacks; the file stays.
 async function importLegacy($, root) {
-  const path = `${root}/${FILE}`
+  const path = `${root}/${LEGACY_FILE}`
   if (!(await $.fs.exists(path))) return
-  const parsed = parseFile(await $.fs.read(path))
+  const parsed = parseItems(await $.fs.read(path))
   if (!parsed.ok || !parsed.items.length) return
-  const done = await mutate($, list => {
+  const res = await mutate($, list => {
     const known = new Set(list.map(i => i.id))
     const fresh = parsed.items.filter(i => !known.has(i.id))
     return { items: fresh.length ? [...list, ...fresh] : list, added: fresh.length }
   }, root)
-  if (done && done.added > 0 && root === sessionRepo) notice = `Importados ${done.added} ${done.added === 1 ? 'cabo' : 'cabos'} de ${FILE}. Ya puedes borrar el fichero del repo.`
+  // only an import that was written may tell the person to delete the file
+  if (res?.added && root === sessionRepo) notice = `Importados ${res.added} ${res.added === 1 ? 'cabo' : 'cabos'} de ${LEGACY_FILE}. Ya puedes borrar el fichero del repo.`
 }
 
-// At session start: the 0.3 file, then origin, then where the ref stands.
+// At session start: the 0.3 file, then origin, then where the ref stands; a failing step does not skip the next.
 async function startSync($, root) {
   await guarded($, 'importar .claude/loose-ends.json', () => importLegacy($, root))
   await guarded($, 'traer los cabos de origin', () => pullRemote($, root))
-  if (root === sessionRepo) {
-    await guarded($, 'ver si hay cabos sin subir', async () => {
-      sync = await refreshSync($, root)
-      $.ui.invalidate('ui.render')
-    })
-  }
-}
-
-async function toplevelOf($, dir) {
-  const r = await $.process.run(['git', '-C', dir, 'rev-parse', '--show-toplevel'])
-  if (r.exitCode !== 0) return null
-  const top = typeof r.stdout === 'string' ? r.stdout.trim() : ''
-  if (!isAbsolutePath(top)) throw new Error('git no dio la raíz del repo')
-  return normalizePath(top)
-}
-
-// Toplevel of the git repo a path belongs to, or null (also when git cannot run). A file path starts at its
-// directory; anything else starts at itself. Climbs a few levels for folders that do not exist yet.
-async function repoOf($, path, { file = false, fresh = false } = {}) {
-  if (!isAbsolutePath(path)) return null
-  let dir = normalizePath(path)
-  if (file) dir = parentPath(dir)
-  const tried = []
-  for (let depth = 0; depth < MAX_WALK; depth++) {
-    if (fresh) repoCache.delete(dir)
-    let top = repoCache.get(dir)
-    if (top === undefined) {
-      try {
-        top = await toplevelOf($, dir)
-      } catch {
-        return null
-      }
-      if (repoCache.size >= MAX_CACHE) repoCache.clear()
-      repoCache.set(dir, top)
-    }
-    if (top) {
-      for (const d of tried) repoCache.set(d, top)
-      return isIgnoredRepo(top, await homeDir($)) ? null : top
-    }
-    tried.push(dir)
-    const parent = parentPath(dir)
-    if (parent === dir) return null
-    dir = parent
-  }
-  return null
-}
-
-async function homeDir($) {
-  if (homePath === undefined) {
-    try {
-      const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
-      homePath = home ? normalizePath(home) : null
-    } catch {
-      homePath = null
-    }
-  }
-  return homePath
-}
-
-// The session's repo from its root, read afresh; throws when git cannot say, so callers keep the last answer.
-// A repo under `.claude` or the home directory counts as no repo.
-async function resolveSessionRepo($) {
-  const session = await projectRoot($)
-  const root = isAbsolutePath(session) ? normalizePath(session) : session
-  repoCache.delete(root)
-  const top = await toplevelOf($, root)
-  repoCache.set(root, top)
-  const before = sessionRepo
-  sessionRepo = top && !isIgnoredRepo(top, await homeDir($)) ? top : null
-  if (sessionRepo !== before) {
-    // nothing of the old repo may be drawn while the new one loads
-    items = []
-    fileError = null
-    discarding = null
-    expanded = null
-    showOthers = false
-    showDone = false
+  await guarded($, 'ver si hay cabos sin subir', async () => {
+    if (root !== sessionRepo) return
+    sync = await refreshSync($, root)
     $.ui.invalidate('ui.render')
-  }
+  })
 }
 
-// On the write chain, so a write never straddles a change of session repo.
-async function refreshSessionRepo($) {
-  const run = writeChain.then(() => resolveSessionRepo($))
-  writeChain = run.catch(() => {})
-  return run
-}
-
-async function branchOf($, dir) {
-  const r = await $.process.run(['git', '-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'])
-  return r.exitCode === 0 ? r.stdout.trim() : null
-}
-
-async function readBranch($) {
-  return sessionRepo ? branchOf($, sessionRepo) : null
-}
-
-// Files a loose end in `target`, the toplevel of the repo it belongs to. Only the session repo's items live in memory.
-// `added` is undefined when that repo's file is unreadable (`error` says why).
-async function note($, input, target) {
+// Runs the filter and files a candidate in `target`. `reason` says why the filter refused it, `error` why the
+// repo could not be read or written.
+async function offer($, input, target) {
   const now = await nowIso($)
   const noteBranch = await branchOf($, target)
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const report = {}
-  let wasSession = false
+  let reason = null
   const res = await mutate($, (list, isSession) => {
-    wasSession = isSession
     if (isSession) branch = noteBranch
-    return addItem(list, { ...input, id, branch: noteBranch, now })
+    reason = rejectReason(input, list)
+    return reason ? { items: list, added: null } : propose(list, { ...input, id, branch: noteBranch, now })
   }, target, report)
-  if (res && res.added) $.ui.toast(wasSession ? `Cabo suelto: ${res.added.text}` : `Cabo suelto (${repoName(target)}): ${res.added.text}`)
-  return { added: res ? res.added : undefined, error: report.error, target }
+  if (report.error) return { error: report.error }
+  if (reason) {
+    await logDebug($, `loose-ends: candidato rechazado (${reason}): ${input.text}`)
+    return { reason }
+  }
+  return res?.added ? { added: res.added } : { reason: 'texto demasiado corto' }
 }
 
-async function feel($, ev) {
-  const now = await $.clock.now()
-  mood = moodReduce(mood, ev, now)
-  $.ui.invalidate('ui.render')
-  if (ev.type !== 'tool' && ev.type !== 'turn.start') $.clock.after(FLASH_MS + 50, () => $.ui.invalidate('ui.render'))
-}
-
-async function readCommits($) {
-  if (!sessionStart || !sessionRepo) return []
-  const midnight = new Date(await $.clock.now())
-  midnight.setHours(0, 0, 0, 0)
-  const since = new Date(Math.max(sessionStart, midnight.getTime())).toISOString()
-  const r = await $.process.run(['git', 'log', `--since=${since}`, '--format=%h%x09%s'], { cwd: sessionRepo })
-  if (r.exitCode !== 0) return []
-  return r.stdout
-    .split('\n')
-    .filter(Boolean)
-    .map(line => {
-      const [hash, ...rest] = line.split('\t')
-      return { hash, subject: rest.join('\t') }
-    })
+async function lastCommit($) {
+  if (!sessionRepo) return null
+  const r = await $.process.run(['git', '-C', sessionRepo, ...LAST_COMMIT_ARGS])
+  return r.exitCode === 0 ? firstLine(r.stdout) : null
 }
 
 // Repos the main loop touched this turn, once the lookups queued by `trackRepos` have finished.
-async function touch($, set, paths, isFile) {
+async function collectTouched($, set, paths, isFile) {
   for (const path of paths) {
     const top = await repoOf($, path, { file: isFile })
     if (top && set.size < MAX_TOUCHED) set.add(top)
@@ -410,63 +398,125 @@ function trackRepos($, e) {
   if (!paths.length) return
   const set = touched
   const isFile = FILE_TOOLS.has(e.tool)
-  touchChain = touchChain.then(() => touch($, set, paths, isFile)).catch(err => logDebug($, `loose-ends: resolver los repos tocados falló (${err?.message ?? err})`))
+  touchChain = touchChain.then(() => collectTouched($, set, paths, isFile)).catch(err => logDebug($, `loose-ends: resolver los repos tocados falló (${err?.message ?? err})`))
 }
 
-async function sweep($, answer, touchedNow) {
+// Haiku reads the answer: new candidates only from long answers, closures for the live items in any answer.
+async function sweep($, answer, touchedNow, commit) {
   const others = (await touchedNow).filter(repo => repo !== sessionRepo)
   if (!sessionRepo && !others.length) return
-  const candidates = others.length ? candidateRepos(sessionRepo, others) : []
-  const open = active(items)
-  const r = await $.model.complete({ model: SWEEP_MODEL, system: SWEEP_SYSTEM, prompt: buildSweepPrompt(answer, open, candidates), maxTokens: 800, timeoutMs: 20000 })
+  const repos = others.length ? candidateRepos(sessionRepo, others) : []
+  const open = live(items)
+  const r = await $.model.complete({
+    model: SWEEP_MODEL,
+    system: SWEEP_SYSTEM,
+    prompt: buildSweepPrompt(answer, open, candidates(items), repos, rejectedTexts(items)),
+    maxTokens: 800,
+    timeoutMs: 20000,
+  })
   if (!r.isAnswered) {
-    $.ui.log(`loose-ends: barrido omitido (${r.reason})`, { to: 'debug' })
+    await logDebug($, `loose-ends: barrido omitido (${r.reason})`)
     return
   }
-  const parsed = parseSweepReply(r.text, open.map(i => i.id), candidates, answer)
+  const parsed = parseSweepReply(r.text, open.map(i => i.id), repos, answer, { allowNew: shouldSweep(answer) })
   if (!parsed) {
-    $.ui.log('loose-ends: barrido con JSON inválido', { to: 'debug' })
+    await logDebug($, 'loose-ends: barrido con JSON inválido')
     return
   }
-  if (parsed.dropped) $.ui.log(`loose-ends: ${parsed.dropped} ${parsed.dropped === 1 ? 'cabo descartado' : 'cabos descartados'} por evidencia no literal`, { to: 'debug' })
+  if (parsed.dropped) await logDebug($, `loose-ends: ${parsed.dropped} ${parsed.dropped === 1 ? 'propuesta descartada' : 'propuestas descartadas'} por cita no literal`)
   for (const { repo, ...fresh } of parsed.fresh) {
     const target = repo ?? sessionRepo
-    if (!target) continue
-    const { added } = await note($, { ...fresh, source: 'sweep' }, target)
-    if (added && added.priority === 'high') await feel($, { type: 'worry' })
+    if (target) await offer($, { ...fresh, source: 'sweep' }, target)
   }
-  if (parsed.resolved.length) {
+  if (parsed.resolved.length && sessionRepo) {
     const now = await nowIso($)
-    await mutate($, list =>
-      parsed.resolved.reduce((acc, id) => (active(acc).some(i => i.id === id) ? close(acc, id, { status: 'done', closedBy: 'sweep', now }) : acc), list),
-    )
+    await mutate($, list => parsed.resolved.reduce((acc, r) => proposeClose(acc, r.id, { quote: r.quote, commit }, now), list))
   }
 }
 
 function bandModel(now) {
-  return { mood: moodAt(mood, now), plan: planProgress(plan), counts: counts(items, branch), fileError, filePath: sessionRepo ? `${sessionRepo} (refs/loose-ends)` : 'refs/loose-ends' }
+  const c = counts(items)
+  return {
+    mood: chispaMood({ candidates: c.candidates, urgent: c.high, flashUntil, working, lastActivity, now }),
+    counts: c,
+    urgent: topUrgent(items),
+    justClosed: justClosed && now < justClosed.until ? justClosed : null,
+    recap: null,
+    fileError,
+  }
 }
 
 function paneModel(now) {
-  const list = active(items)
-  const today = new Date(now).toDateString()
   return {
     now,
     branch,
     working,
     fileError,
-    filePath: sessionRepo ? `${sessionRepo} (refs/loose-ends)` : 'refs/loose-ends',
     noRepo: sessionRepo === null,
-    discarding,
-    expanded,
-    showOthers,
-    showDone,
-    plan: { items: plan, ...planProgress(plan) },
-    loose: list.filter(i => !i.branch || i.branch === branch),
-    others: list.filter(i => i.branch && i.branch !== branch),
-    closedToday: items.filter(i => (i.status === 'done' || i.status === 'dismissed') && i.closedAt && new Date(i.closedAt).toDateString() === today),
-    commits,
+    repoName: sessionRepo ? repoName(sessionRepo) : '',
+    repoPath: sessionRepo ?? '',
+    notice,
+    sync,
+    editing,
+    waiting: candidates(items),
+    live: live(items).map(i => ({ ...i, stale: isStale(i, now) })),
+    closed: closedRecently(items, now),
+    learned: items.filter(i => i.status === 'rejected').length,
   }
+}
+
+// The cards a message of the assistant carries: the candidates and proposed closures it quotes, and the ones the
+// person already answered there.
+function triageCards(text) {
+  if (!sessionRepo || typeof text !== 'string') return []
+  const cards = []
+  for (const item of items) {
+    const answered = triage.get(item.id)
+    if (answered && containsQuote(text, answered.quote)) {
+      cards.push({ kind: answered.kind, item, quote: answered.quote, state: answered.state })
+      continue
+    }
+    if (item.status === 'candidate' && item.evidence && containsQuote(text, item.evidence)) cards.push({ kind: 'candidate', item, quote: item.evidence, state: null })
+    else if (item.proposal && containsQuote(text, item.proposal.quote)) cards.push({ kind: 'proposal', item, quote: item.proposal.quote, state: null })
+  }
+  return cards.map(c => ({ ...c, repoName: repoName(sessionRepo), editing: editing === c.item.id }))
+}
+
+// One change the person makes to an item. With `state`, the card under its message remembers the answer and how
+// the item was before, so Deshacer can put it back. Answers the item as it was, or null when nothing changed.
+async function act($, id, change, state) {
+  const before = items.find(i => i.id === id)
+  if (!before) return null
+  lastActivity = await $.clock.now()
+  const now = await nowIso($)
+  const res = await mutate($, list => change(list, id, now))
+  if (res === null) return null
+  if (state) {
+    const closing = state === 'closed' || state === 'kept'
+    const quote = closing ? before.proposal?.quote : before.evidence
+    if (quote) triage.set(id, { kind: closing ? 'proposal' : 'candidate', quote, state, previous: before })
+  }
+  return before
+}
+
+// A close: the band says so for 4 s with Deshacer, and Chispa celebrates.
+async function closeWith($, id, change, state) {
+  const before = await act($, id, change, state)
+  if (!before || items.find(i => i.id === id)?.status !== 'done') return
+  const now = await $.clock.now()
+  justClosed = { item: before, text: before.text, until: now + FLASH_MS }
+  flashUntil = now + FLASH_MS
+  $.ui.invalidate('ui.render')
+  $.clock.after(FLASH_MS + 50, () => $.ui.invalidate('ui.render'))
+}
+
+async function undo($, id) {
+  const previous = triage.get(id)?.previous ?? (justClosed?.item.id === id ? justClosed.item : null)
+  if (!previous) return
+  triage.delete(id)
+  if (justClosed?.item.id === id) justClosed = null
+  const now = await nowIso($)
+  await mutate($, list => restore(list, previous, now))
 }
 
 async function doNow($, id) {
@@ -474,27 +524,57 @@ async function doNow($, id) {
   const item = items.find(i => i.id === id)
   if (!item) return
   const now = await nowIso($)
-  clearDiscard(id)
-  const res = await mutate($, list => markReminded(queue(list, id), [id], now))
+  const res = await mutate($, list => start(list, id, now))
   if (res === null) return
   await $.prompt.submit({ text: doNowText(item) })
 }
 
-async function closeAs($, id, status, reason) {
-  clearDiscard(id)
+async function addByHand($, text) {
+  if (!sessionRepo) return
   const now = await nowIso($)
-  await mutate($, list => close(list, id, { status, reason, closedBy: 'user', now }))
+  const id = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
+  await mutate($, list => addManual(list, { text, id, branch, now }))
+}
+
+// What the card and the pane can do; every write runs in the background and logs its failure.
+function itemActions($) {
+  return {
+    save: id => background($, act($, id, save, 'saved'), 'guardar el cabo'),
+    reject: id => background($, act($, id, reject, 'rejected'), 'rechazar el candidato'),
+    confirm: id => background($, closeWith($, id, confirmClose, 'closed'), 'cerrar el cabo'),
+    keep: id => background($, act($, id, keepOpen, 'kept'), 'dejar abierto el cabo'),
+    undo: id => background($, undo($, id), 'deshacer'),
+    startEdit: id => {
+      editing = editing === id ? null : id
+      $.ui.invalidate('ui.render')
+    },
+    saveEdited: (id, text) => {
+      editing = null
+      background($, act($, id, (list, target, now) => editText(list, target, text, now)), 'editar el cabo')
+    },
+    doNow: id => background($, doNow($, id), 'Hacer'),
+    done: id => background($, closeWith($, id, markDone, null), 'cerrar el cabo'),
+    dismiss: id => background($, act($, id, dismiss), 'descartar el cabo'),
+    reopen: id => background($, act($, id, reopen), 'reabrir el cabo'),
+    cyclePriority: id =>
+      background($, act($, id, (list, target, now) => setPriority(list, target, NEXT_PRIORITY[list.find(i => i.id === target)?.priority] ?? 'medium', now)), 'cambiar la prioridad'),
+    keepFresh: id => background($, act($, id, touch), 'mantener el cabo'),
+    add: text => background($, addByHand($, text), 'apuntar un cabo'),
+    push: () => background($, pushRemote($, sessionRepo), 'subir los cabos'),
+  }
 }
 
 export function register(on) {
   on('session.start', async ($, e, next) => {
-    discarding = null
-    expanded = null
-    showOthers = false
-    showDone = false
-    sessionStart = (await $.session.usage()).startedAt
+    editing = null
+    justClosed = null
+    triage.clear()
+    working = false
+    flashUntil = 0
+    turnCommit = null
+    lastActivity = await $.clock.now()
     await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA })
-    await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: plan, cabos sueltos y hecho', immediate: true })
+    await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: cabos por revisar, abiertos y cerrados', immediate: true })
     touched = new Set()
     sessionRepo = null
     await guarded($, 'resolver el repo de la sesión', () => refreshSessionRepo($))
@@ -503,9 +583,6 @@ export function register(on) {
     notice = null
     sync = null
     if (sessionRepo) background($, startSync($, sessionRepo), 'traer los cabos de origin')
-    mood = initialMood(await $.clock.now())
-    plan = []
-    commits = []
     if (refreshTimer) refreshTimer.cancel()
     refreshTimer = $.clock.every(60000, () => $.ui.invalidate('ui.render'))
     return next(e)
@@ -513,17 +590,17 @@ export function register(on) {
 
   on('tool.call', async ($, e, next) => {
     if (e.agentId) return next(e)
-    await feel($, { type: 'tool', tool: e.tool })
+    lastActivity = await $.clock.now()
     const r = await next(e)
-    if (e.tool === 'TaskCreate' && r.result && r.result.task) plan = planReduce(plan, { kind: 'create', id: r.result.task.id, subject: e.subject })
-    if (e.tool === 'TaskUpdate') plan = planReduce(plan, { kind: 'update', id: e.taskId, status: e.status, subject: e.subject })
-    if (e.tool === 'TodoWrite' && Array.isArray(e.todos)) plan = planReduce(plan, { kind: 'todos', todos: e.todos })
     trackRepos($, e)
     if (e.tool === 'Bash' && typeof e.command === 'string') {
       const failed = bashFailed(r)
-      const kind = classifyBash(e.command, failed)
-      if (kind) await feel($, { type: kind })
-      if (kind === 'commit') commits = await readCommits($)
+      if (isCommit(e.command, failed)) {
+        turnCommit = await lastCommit($)
+        flashUntil = (await $.clock.now()) + FLASH_MS
+        $.ui.invalidate('ui.render')
+        $.clock.after(FLASH_MS + 50, () => $.ui.invalidate('ui.render'))
+      }
       if (isPush(e.command, failed)) background($, afterUserPush($), 'subir los cabos tras tu push')
     }
     return r
@@ -531,9 +608,11 @@ export function register(on) {
 
   on('turn.start', async ($, e, next) => {
     working = true
+    turnCommit = null
+    lastActivity = await $.clock.now()
     touched = new Set()
     for (const [dir, top] of repoCache) if (top === null) repoCache.delete(dir)
-    await feel($, { type: 'turn.start' })
+    $.ui.invalidate('ui.render')
     return next(e)
   })
 
@@ -541,29 +620,34 @@ export function register(on) {
     const r = await next(e)
     if (e.agentId) return r
     working = false
-    await feel($, { type: 'turn.end' })
+    lastActivity = await $.clock.now()
+    $.ui.invalidate('ui.render')
     await guarded($, 'resolver el repo de la sesión tras el turno', () => refreshSessionRepo($))
-    await guarded($, 'leer la rama tras el turno', async () => { branch = await readBranch($) })
-    await guarded($, 'refrescar los cabos tras el turno', () => mutate($, list => list))
-    await guarded($, 'leer los commits tras el turno', async () => { commits = await readCommits($) })
-    if (e.reason === 'answer' && shouldSweep(e.answer)) {
-      const set = touched
-      background($, sweep($, e.answer, touchChain.then(() => [...set])), 'el barrido')
+    await guarded($, 'leer la rama tras el turno', async () => {
+      branch = await readBranch($)
+    })
+    const now = await nowIso($)
+    await guarded($, 'refrescar los cabos tras el turno', () => mutate($, list => expireCandidates(list, now)))
+    if (e.reason === 'answer' && typeof e.answer === 'string' && e.answer.trim()) {
+      if (shouldSweep(e.answer) || live(items).some(i => i.status === 'doing')) {
+        const set = touched
+        background($, sweep($, e.answer, touchChain.then(() => [...set]), turnCommit), 'el barrido')
+      }
     }
     return r
   })
 
   on('tool.call', { tool: 'mcp__loose-ends__note_loose_end' }, async ($, e) => {
-    if (String(e.text ?? '').trim().length < 3) return { result: 'Texto demasiado corto: describe el cabo en una frase.' }
+    if (String(e.text ?? '').trim().length < 3) return { result: TOOL_TOO_SHORT }
     let target = sessionRepo
     if (typeof e.repo === 'string' && e.repo.trim()) {
       target = await repoOf($, e.repo.trim(), { fresh: true })
       if (!target) return { result: NOT_A_REPO }
     } else if (!target) return { result: NO_GIT_NOTE }
-    const { added, error } = await note($, { text: e.text, priority: e.priority, evidence: e.evidence, source: 'tool' }, target)
-    if (added === undefined) return { result: `No se pudo apuntar: los cabos de ${target} (refs/loose-ends) están ilegibles (${error}).` }
-    if (added && added.priority === 'high') await feel($, { type: 'worry' })
-    return { result: added ? `Apuntado (${added.id}): ${added.text}` : 'Ya estaba apuntado.' }
+    const out = await offer($, { text: e.text, category: e.category, priority: e.priority, evidence: e.evidence, file: relativeTo(target, e.file), source: 'tool' }, target)
+    if (out.error) return { result: toolUnreadable(target, out.error) }
+    if (out.reason) return { result: toolRejected(out.reason) }
+    return { result: toolProposed(out.added) }
   })
 
   on('prompt.compose', async ($, e, next) => {
@@ -574,21 +658,8 @@ export function register(on) {
   on('prompt.context', async ($, e, next) => {
     const r = await next(e)
     await load($)
-    const text = formatContext(active(items))
+    const text = formatContext(live(items))
     return text ? { ...r, blocks: [...r.blocks, { name: 'looseEnds', text }] } : r
-  })
-
-  on('classic.Stop', async ($, e, next) => {
-    const r = await next(e)
-    if (r.block) return r
-    const now = await nowIso($)
-    let due = []
-    await mutate($, list => {
-      const expired = expireReminded(list)
-      due = dueReminders(expired)
-      return markReminded(expired, due.map(i => i.id), now)
-    })
-    return due.length ? { ...r, block: reminderText(due) } : r
   })
 
   on('command.run', { command: 'pendientes' }, async ($) => {
@@ -601,25 +672,28 @@ export function register(on) {
     const el = $.ui.resolve(e)
     const now = await $.clock.now()
     return renderBand(el, e.surface, bandModel(now), {
-      openPane: () => { background($, $.ui.open({ id: 'loose-ends', title: 'Cuaderno' }), 'abrir el cuaderno') },
+      openPane: () => {
+        background($, $.ui.open({ id: 'loose-ends', title: 'Cuaderno' }), 'abrir el cuaderno')
+      },
+      undoClose: () => {
+        if (justClosed) background($, undo($, justClosed.item.id), 'deshacer el cierre')
+      },
     })
   })
 
-  on('ui.render', { component: 'Pane', requestId: 'loose-ends' }, async ($, e, next) => {
-    if (e.surface === 'mobile') return next(e)
+  on('ui.render', { component: 'Pane', requestId: 'loose-ends' }, async ($, e) => {
     const el = $.ui.resolve(e)
     const now = await $.clock.now()
-    return renderPane(el, paneModel(now), {
-      doNow: id => { background($, doNow($, id), 'Hacer') },
-      queue: id => { clearDiscard(id); background($, mutate($, list => queue(list, id)), 'poner en cola') },
-      done: id => { background($, closeAs($, id, 'done', undefined), 'cerrar el cabo') },
-      toggleMore: id => { discarding = null; expanded = expanded === id ? null : id; $.ui.invalidate('ui.render') },
-      startDiscard: id => { discarding = discarding === id ? null : id; $.ui.invalidate('ui.render') },
-      dismiss: (id, reason) => { background($, closeAs($, id, 'dismissed', reason), 'descartar el cabo') },
-      setPriority: (id, p) => { background($, mutate($, list => setPriority(list, id, p)), 'cambiar la prioridad') },
-      reopen: id => { clearDiscard(id); background($, mutate($, list => reopen(list, id)), 'reabrir el cabo') },
-      toggleOthers: () => { showOthers = !showOthers; $.ui.invalidate('ui.render') },
-      toggleDone: () => { showDone = !showDone; $.ui.invalidate('ui.render') },
-    })
+    return renderPane(el, e.surface, paneModel(now), itemActions($))
+  })
+
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    const cards = triageCards(e.props.text)
+    if (!cards.length) return next(e)
+    const text = cards.reduce((t, c) => emphasize(t, c.quote), e.props.text)
+    const drawn = await next({ ...e, props: { ...e.props, text } })
+    const el = $.ui.resolve(e)
+    const actions = itemActions($)
+    return el.Box({ flexDirection: 'column', gap: 1, children: [drawn, ...cards.map(c => renderTriage(el, e.surface, c, actions))] })
   })
 }
