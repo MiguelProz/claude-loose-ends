@@ -55,6 +55,22 @@ test('at start origin loose ends are merged into the local ref', async ($, on) =
   expect(w.saved().map((i: any) => i.text)).toEqual(['Local', 'De otro ordenador'])
 })
 
+test('a failed fetch at start leaves a line in the debug log', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) }, remote: { [ROOT]: '' } })
+  await w.start($)
+  await w.clock.settle()
+  expect(w.logs).toContain('loose-ends: no se pudieron traer los cabos de origin')
+})
+
+test('a failing import does not stop origin from being fetched, and says so in the log', async ($, on) => {
+  const w = world(on, { [LEGACY]: blob(item('a1', 'Cabo antiguo')) }, { remote: { [ROOT]: blob(item('o1', 'Remoto')) } })
+  w.flags.failWrites = true
+  await w.start($)
+  await w.clock.settle()
+  expect(w.fetches).toEqual([ROOT])
+  expect(w.logs.some(l => l.includes('importar .claude/loose-ends.json falló'))).toBe(true)
+})
+
 test('without origin nothing is fetched', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) } })
   await w.start($)
@@ -78,6 +94,16 @@ test('after the person pushes, the first time asks; Siempre pushes and remembers
   await w.clock.settle()
   expect(asked).toHaveLength(1)
   expect(w.pushes).toEqual([ROOT, ROOT])
+})
+
+test('a push chained after a commit in one command still pushes the ref', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) }, remote: { [ROOT]: '' }, sync: { [ROOT]: 'true' } })
+  tools(on)
+  await w.start($)
+  await w.clock.settle()
+  await $.tool.call({ tool: 'Bash', command: 'git add . && git commit -m x && git push' })
+  await w.clock.settle()
+  expect(w.pushes).toEqual([ROOT])
 })
 
 test('Nunca remembers and never pushes', async ($, on) => {

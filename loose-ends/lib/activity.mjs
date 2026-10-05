@@ -49,6 +49,9 @@ export function classifyBash(command, failed) {
   return null
 }
 
+// A successful git push anywhere in the command, also chained after a commit (classifyBash names the commit first).
+export const isPush = (command, failed) => !failed && /\bgit\s+push\b/.test(command)
+
 export function bashFailed(result) {
   if (!result) return false
   return result.isError === true || /\b[1-9]\d* failed\b/i.test(result.text ?? '')

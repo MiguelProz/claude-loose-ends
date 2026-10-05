@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { bashFailed, classifyBash, FLASH_MS, initialMood, moodAt, moodReduce, planProgress, planReduce, SLEEP_AFTER_MS } from '../lib/activity.mjs'
+import { bashFailed, classifyBash, FLASH_MS, initialMood, isPush, moodAt, moodReduce, planProgress, planReduce, SLEEP_AFTER_MS } from '../lib/activity.mjs'
 
 describe('plan', () => {
   test('create, update, delete', () => {
@@ -74,6 +74,13 @@ describe('bash', () => {
     expect(classifyBash('git push origin main', false)).toBe('push')
     expect(classifyBash('git push', true)).toBe(null)
     expect(classifyBash('git pushd', false)).toBe(null)
+  })
+  test('isPush sees a successful git push anywhere in the command, a failed one or a lookalike not', () => {
+    expect(isPush('git push origin main', false)).toBe(true)
+    expect(isPush('git add . && git commit -m x && git push', false)).toBe(true)
+    expect(isPush('git add . && git commit -m x && git push', true)).toBe(false)
+    expect(isPush('git commit -m x', false)).toBe(false)
+    expect(isPush('git pushd', false)).toBe(false)
   })
   test('vitest only counts as a command, not as a word in a path', () => {
     expect(classifyBash('cat vitest.config.ts', true)).toBe(null)

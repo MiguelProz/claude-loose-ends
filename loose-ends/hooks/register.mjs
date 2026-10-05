@@ -1,5 +1,5 @@
 import { FILE, active, addItem, close, counts, dueReminders, expireReminded, markReminded, parseFile, queue, reopen, serialize, setPriority } from '../lib/store.mjs'
-import { FLASH_MS, bashFailed, classifyBash, initialMood, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
+import { FLASH_MS, bashFailed, classifyBash, initialMood, isPush, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
 import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
 import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, repoName } from '../lib/repos.mjs'
@@ -190,7 +190,10 @@ async function refreshSync($, root) {
 async function pullRemote($, root) {
   if (!(await hasRemote($, root))) return null
   const fetched = await $.process.run(['git', '-C', root, ...FETCH_ARGS], { timeoutMs: 20000 })
-  if (fetched.exitCode !== 0) return null
+  if (fetched.exitCode !== 0) {
+    await logDebug($, 'loose-ends: no se pudieron traer los cabos de origin')
+    return null
+  }
   const theirs = await readRef($, root, REMOTE_REF)
   if (!theirs.ok) return null
   await mutate($, list => mergeItems(list, theirs.items), root)
@@ -245,23 +248,23 @@ async function importLegacy($, root) {
   if (!(await $.fs.exists(path))) return
   const parsed = parseFile(await $.fs.read(path))
   if (!parsed.ok || !parsed.items.length) return
-  let added = 0
-  await mutate($, list => {
+  const done = await mutate($, list => {
     const known = new Set(list.map(i => i.id))
     const fresh = parsed.items.filter(i => !known.has(i.id))
-    added = fresh.length
-    return fresh.length ? [...list, ...fresh] : list
+    return { items: fresh.length ? [...list, ...fresh] : list, added: fresh.length }
   }, root)
-  if (added && root === sessionRepo) notice = `Importados ${added} ${added === 1 ? 'cabo' : 'cabos'} de ${FILE}. Ya puedes borrar el fichero del repo.`
+  if (done && done.added > 0 && root === sessionRepo) notice = `Importados ${done.added} ${done.added === 1 ? 'cabo' : 'cabos'} de ${FILE}. Ya puedes borrar el fichero del repo.`
 }
 
 // At session start: the 0.3 file, then origin, then where the ref stands.
 async function startSync($, root) {
-  await importLegacy($, root)
-  await pullRemote($, root)
+  await guarded($, 'importar .claude/loose-ends.json', () => importLegacy($, root))
+  await guarded($, 'traer los cabos de origin', () => pullRemote($, root))
   if (root === sessionRepo) {
-    sync = await refreshSync($, root)
-    $.ui.invalidate('ui.render')
+    await guarded($, 'ver si hay cabos sin subir', async () => {
+      sync = await refreshSync($, root)
+      $.ui.invalidate('ui.render')
+    })
   }
 }
 
@@ -517,10 +520,11 @@ export function register(on) {
     if (e.tool === 'TodoWrite' && Array.isArray(e.todos)) plan = planReduce(plan, { kind: 'todos', todos: e.todos })
     trackRepos($, e)
     if (e.tool === 'Bash' && typeof e.command === 'string') {
-      const kind = classifyBash(e.command, bashFailed(r))
+      const failed = bashFailed(r)
+      const kind = classifyBash(e.command, failed)
       if (kind) await feel($, { type: kind })
       if (kind === 'commit') commits = await readCommits($)
-      if (kind === 'push') background($, afterUserPush($), 'subir los cabos tras tu push')
+      if (isPush(e.command, failed)) background($, afterUserPush($), 'subir los cabos tras tu push')
     }
     return r
   })
