@@ -94,3 +94,63 @@ test('the first session in a repo records what it sees and says nothing about it
   expect(await term.find({ type: 'Text', text: '1 abierto' })).toBeDefined()
   await term.unmount()
 })
+
+const TOOL_PANE = { component: 'Pane', requestId: 'loose-ends', props: { title: 'Cuaderno', isFocused: true, bodyColumns: 60, placement: 'dock' } as any }
+
+test('what this session wrote is not news for the next session', async ($, on) => {
+  const w = world(on)
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  await w.start($)
+  await w.clock.settle()
+  const pane = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...TOOL_PANE })
+  await pane.input({ key: 'add-item', text: 'Cabo escrito a mano' })
+  await w.clock.settle()
+  await pane.unmount()
+  expect(JSON.parse(w.fs[SEEN]).ids).toHaveLength(1)
+  await w.start($)
+  await w.clock.settle()
+  const term = await $.ui.mount({ plugin: 'loose-ends', surface: 'terminal', ...BAND })
+  expect(await term.find({ type: 'Text', text: '1 abierto' })).toBeDefined()
+  expect(await term.find({ type: 'Text', text: /Desde/ })).toBeUndefined()
+  await term.unmount()
+})
+
+test('a close made in this session is not reported as closed in another session', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Abierto')) } })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  await w.start($)
+  await w.clock.settle()
+  const pane = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...TOOL_PANE })
+  await pane.press({ key: 'done-a1' })
+  await w.clock.settle()
+  await pane.unmount()
+  await w.start($)
+  await w.clock.settle()
+  const term = await $.ui.mount({ plugin: 'loose-ends', surface: 'terminal', ...BAND })
+  expect(await term.find({ type: 'Text', text: /Desde/ })).toBeUndefined()
+  await term.unmount()
+})
+
+test('an unreadable ref never overwrites what the last session saw', async ($, on) => {
+  const seen = JSON.stringify({ at: '2026-10-03T10:00:00.000Z', ids: ['a1'], live: ['a1'] })
+  const w = world(on, { [SEEN]: seen }, { refs: { [ROOT]: '{ roto' } })
+  turns(on)
+  await w.start($)
+  await w.clock.settle()
+  await endTurn($)
+  await w.clock.settle()
+  expect(w.fs[SEEN]).toBe(seen)
+})
+
+test('a denied tool call does not use up the file for the turn', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el envío duplicado', { file: 'lib/facturas.ts' })) } })
+  let calls = 0
+  on('tool.call', () => (++calls === 1 ? { deny: 'no' } : { result: {} }))
+  turns(on)
+  await w.start($)
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  const denied = await $.tool.call({ tool: 'Read', file_path: '/proj/lib/facturas.ts' })
+  expect(denied.context).toBeUndefined()
+  const read = await $.tool.call({ tool: 'Read', file_path: '/proj/lib/facturas.ts' })
+  expect(read.context).toEqual(['Cabos abiertos en este fichero: Arreglar el envío duplicado (a1).'])
+})

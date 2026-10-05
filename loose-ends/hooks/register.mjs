@@ -52,6 +52,10 @@ const triage = new Map()
 let refreshTimer = null
 // «Desde …» for the band during the first turn: { since, fresh, closed }, or null.
 let recapNow = null
+// Whether this session already compared with the last one; until then nothing overwrites the old snapshot.
+let seenReady = false
+// Whether a turn has ended in this session; a late compare then no longer shows «Desde …».
+let firstTurnDone = false
 // Files whose open loose ends Claude was already told about this turn, relative to the session repo.
 const passed = new Set()
 const SEEN_FILE = 'loose-ends-seen.json'
@@ -162,6 +166,7 @@ async function mutateNow($, fn, root, report) {
     items = done.items
     // a write moved the ref past what origin has
     if (done.written && sync === 'synced') sync = 'ahead'
+    if (done.written && seenReady) background($, recordSeen($, target, { compare: false }), 'apuntar lo visto del repo')
     if (editing && !items.some(i => i.id === editing)) editing = null
     $.ui.invalidate('ui.render')
   }
@@ -375,18 +380,22 @@ async function seenPath($, root) {
 // Records what this session sees of the repo; with `compare`, first sets the band's «Desde …» against what the
 // last session saw.
 async function recordSeen($, root, { compare }) {
+  if (fileError) return
   const path = await seenPath($, root)
   if (!path) return
   const now = await $.clock.now()
-  if (compare && (await $.fs.exists(path))) {
-    let seen = null
-    try {
-      seen = JSON.parse(await $.fs.read(path))
-    } catch {}
-    const r = recap(items, seen)
-    recapNow = r && (r.fresh || r.closed) ? { since: sinceText(r.at, now), fresh: r.fresh, closed: r.closed } : null
-    $.ui.invalidate('ui.render')
-  }
+  if (compare) {
+    if (await $.fs.exists(path)) {
+      let seen = null
+      try {
+        seen = JSON.parse(await $.fs.read(path))
+      } catch {}
+      const r = recap(items, seen)
+      if (!firstTurnDone) recapNow = r && (r.fresh || r.closed) ? { since: sinceText(r.at, now), fresh: r.fresh, closed: r.closed } : null
+      $.ui.invalidate('ui.render')
+    }
+    seenReady = true
+  } else if (!seenReady) return
   await $.fs.write(path, JSON.stringify(snapshot(items, new Date(now).toISOString())))
 }
 
@@ -399,8 +408,7 @@ function passingFor(e) {
   if (!rel || passed.has(rel)) return null
   const here = live(items).filter(i => i.file === rel)
   if (!here.length) return null
-  passed.add(rel)
-  return passingText(here)
+  return { rel, text: passingText(here) }
 }
 
 // Runs the filter and files a candidate in `target`. `reason` says why the filter refused it, `error` why the
@@ -633,6 +641,8 @@ export function register(on) {
   on('session.start', async ($, e, next) => {
     editing = null
     recapNow = null
+    seenReady = false
+    firstTurnDone = false
     passed.clear()
     justClosed = null
     triage.clear()
@@ -670,7 +680,10 @@ export function register(on) {
       if (isPush(e.command, failed)) background($, afterUserPush($), 'subir los cabos tras tu push')
     }
     const passing = passingFor(e)
-    if (passing && r && !r.deny) return { ...r, context: [...(r.context ?? []), passing] }
+    if (passing && r && !r.deny) {
+      passed.add(passing.rel)
+      return { ...r, context: [...(r.context ?? []), passing.text] }
+    }
     return r
   })
 
@@ -679,11 +692,13 @@ export function register(on) {
     if (!e.agentId) turnStartedAt = await nowIso($)
     lastActivity = await $.clock.now()
     touched = new Set()
-    passed.clear()
-    if (typeof e.text === 'string' && e.text.startsWith(SUGGEST_PREFIX)) {
-      const wanted = e.text.slice(SUGGEST_PREFIX.length).trim()
-      const item = live(items).find(i => i.text === wanted)
-      if (item) background($, act($, item.id, start), 'empezar el cabo sugerido')
+    if (!e.agentId) {
+      passed.clear()
+      if (typeof e.text === 'string' && e.text.startsWith(SUGGEST_PREFIX)) {
+        const wanted = e.text.slice(SUGGEST_PREFIX.length).trim()
+        const item = live(items).find(i => i.text === wanted)
+        if (item) background($, act($, item.id, start), 'empezar el cabo sugerido')
+      }
     }
     for (const [dir, top] of repoCache) if (top === null) repoCache.delete(dir)
     $.ui.invalidate('ui.render')
@@ -695,6 +710,7 @@ export function register(on) {
     if (e.agentId) return r
     working = false
     recapNow = null
+    firstTurnDone = true
     lastActivity = await $.clock.now()
     $.ui.invalidate('ui.render')
     await guarded($, 'resolver el repo de la sesión tras el turno', () => refreshSessionRepo($))
