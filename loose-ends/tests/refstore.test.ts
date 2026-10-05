@@ -1,0 +1,55 @@
+import { describe, expect, test } from 'claude-code/testing'
+import { GIT_ENV, REMOTE_REF, ZERO, blobArgs, commitArgs, firstLine, hasOrigin, mergeItems, pushArgs, shaArgs, trackArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
+
+const item = (id: string, over = {}) => ({ id, text: id, createdAt: '2026-10-04T09:00:00.000Z', ...over })
+
+describe('refstore argv', () => {
+  test('reads go through rev-parse and cat-file of the one blob', () => {
+    expect(shaArgs()).toEqual(['rev-parse', '--verify', '--quiet', 'refs/loose-ends'])
+    expect(shaArgs(REMOTE_REF)).toEqual(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/loose-ends'])
+    expect(blobArgs('abc')).toEqual(['cat-file', 'blob', 'abc:loose-ends.json'])
+  })
+  test('writes: tree line, commit with or without parent, update-ref guarded by the old value', () => {
+    expect(treeInput('b1')).toBe('100644 blob b1\tloose-ends.json\n')
+    expect(commitArgs('t1', null)).toEqual(['commit-tree', 't1', '-m', 'loose-ends'])
+    expect(commitArgs('t1', 'p1')).toEqual(['commit-tree', 't1', '-p', 'p1', '-m', 'loose-ends'])
+    expect(updateArgs('n1', 'p1')).toEqual(['update-ref', 'refs/loose-ends', 'n1', 'p1'])
+    expect(updateArgs('n1', null)).toEqual(['update-ref', 'refs/loose-ends', 'n1', ZERO])
+    expect(ZERO).toBe('0'.repeat(40))
+  })
+  test('push leases what was fetched; the tracking ref follows what was pushed', () => {
+    expect(pushArgs('r1')).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends:r1', 'origin', 'refs/loose-ends:refs/loose-ends'])
+    expect(pushArgs(null)).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends:', 'origin', 'refs/loose-ends:refs/loose-ends'])
+    expect(trackArgs('n1')).toEqual(['update-ref', 'refs/remotes/origin/loose-ends', 'n1'])
+  })
+  test('commit-tree runs with an identity of its own', () => {
+    expect(GIT_ENV).toEqual({ GIT_AUTHOR_NAME: 'loose-ends', GIT_AUTHOR_EMAIL: 'loose-ends@localhost', GIT_COMMITTER_NAME: 'loose-ends', GIT_COMMITTER_EMAIL: 'loose-ends@localhost' })
+  })
+})
+
+describe('refstore parsing', () => {
+  test('firstLine trims and gives null for nothing', () => {
+    expect(firstLine('abc\nrest')).toBe('abc')
+    expect(firstLine('  abc  \n')).toBe('abc')
+    expect(firstLine('')).toBe(null)
+    expect(firstLine(undefined)).toBe(null)
+  })
+  test('hasOrigin looks for a line that is exactly origin', () => {
+    expect(hasOrigin('origin\n')).toBe(true)
+    expect(hasOrigin('upstream\norigin\n')).toBe(true)
+    expect(hasOrigin('origin2\n')).toBe(false)
+    expect(hasOrigin('')).toBe(false)
+    expect(hasOrigin(undefined)).toBe(false)
+  })
+})
+
+describe('mergeItems', () => {
+  test('union by id, mine first, then the ones only theirs has', () => {
+    expect(mergeItems([item('a'), item('b')], [item('c'), item('a')]).map(i => i.id)).toEqual(['a', 'b', 'c'])
+  })
+  test('the later updatedAt wins, createdAt stands in, a tie keeps mine', () => {
+    const mine = [item('a', { text: 'mía', updatedAt: '2026-10-04T10:00:00.000Z' }), item('b', { text: 'mía' }), item('c', { text: 'mía', updatedAt: '2026-10-04T10:00:00.000Z' })]
+    const theirs = [item('a', { text: 'suya', updatedAt: '2026-10-04T11:00:00.000Z' }), item('b', { text: 'suya', createdAt: '2026-10-04T08:00:00.000Z' }), item('c', { text: 'suya', updatedAt: '2026-10-04T10:00:00.000Z' })]
+    expect(mergeItems(mine, theirs).map(i => i.text)).toEqual(['suya', 'mía', 'mía'])
+  })
+})

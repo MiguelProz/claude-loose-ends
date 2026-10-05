@@ -1,9 +1,9 @@
 import { expect, test } from 'claude-code/testing'
-import { PATH, pathOf, world } from './world.ts'
+import { ROOT, world } from './world.ts'
 
 const TOOL = 'mcp__loose-ends__note_loose_end'
 const REPOS = { '/proj': '/proj', '/other': '/other' }
-const OTHER = pathOf('/other')
+const OTHER = '/other'
 const BAND = { component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as any }
 const PANE = { component: 'Pane', requestId: 'loose-ends', props: { title: 'Cuaderno', isFocused: true, bodyColumns: 60, placement: 'dock' } as any }
 const own = JSON.stringify({ version: 1, items: [{ id: 'a1', text: 'Cabo de la sesión', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
@@ -21,14 +21,14 @@ const startTurn = ($: any, turnId = 't') => $.turn.start({ text: 'hola', turnId 
 const endTurn = ($: any, turnId = 't') => $.turn.complete({ answer: longAnswer('y'), durationMs: 10, isAborted: false, turnId, reason: 'answer' })
 
 test('a note with repo goes to that repo, not to the session file', async ($, on) => {
-  const w = world(on, { [PATH]: own }, { repos: REPOS, branches: { '/other': 'feat/o' } })
+  const w = world(on, {}, { repos: REPOS, branches: { '/other': 'feat/o' }, refs: { [ROOT]: own } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const r = await $.tool.call({ tool: TOOL, text: 'Cabo del otro repo', priority: 'low', repo: '/other/src/a.ts' })
   expect(String(r.result)).toMatch(/^Apuntado \(\w{8}\): Cabo del otro repo$/)
   expect(w.savedAt(OTHER)).toHaveLength(1)
   expect(w.savedAt(OTHER)[0]).toMatchObject({ text: 'Cabo del otro repo', source: 'tool', branch: 'feat/o', status: 'open' })
-  expect(w.fs[PATH]).toBe(own)
+  expect(w.refText(ROOT)).toBe(own)
   expect(w.writes).toEqual([OTHER])
   expect(w.toasts).toEqual(['Cabo suelto (other): Cabo del otro repo'])
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
@@ -45,7 +45,7 @@ test('repo pointing at a folder of the session repo writes the session file', as
 })
 
 test('a repo that is not in git writes nothing and says so', async ($, on) => {
-  const w = world(on, { [PATH]: own }, { repos: REPOS })
+  const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: own } })
   await w.start($)
   for (const repo of ['/nowhere/x', 'relative/dir']) {
     const r = await $.tool.call({ tool: TOOL, text: 'Cabo perdido', priority: 'low', repo })
@@ -57,22 +57,22 @@ test('a repo that is not in git writes nothing and says so', async ($, on) => {
 
 test('an unreadable file in the other repo is not overwritten', async ($, on) => {
   const broken = '<<<<<<< HEAD\n{}\n=======\n>>>>>>> x\n'
-  const w = world(on, { [OTHER]: broken }, { repos: REPOS })
+  const w = world(on, {}, { repos: REPOS, refs: { [OTHER]: broken } })
   await w.start($)
   const r = await $.tool.call({ tool: TOOL, text: 'Cabo en otro', priority: 'low', repo: '/other' })
   expect(String(r.result)).toContain('ilegible')
-  expect(w.fs[OTHER]).toBe(broken)
+  expect(w.refText(OTHER)).toBe(broken)
 })
 
 test('the session repo is the toplevel of the root, not the root itself', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, root: '/proj/packages/app' })
   await w.start($)
   await $.tool.call({ tool: TOOL, text: 'Cabo desde un subdirectorio', priority: 'low' })
-  expect(w.writes).toEqual([PATH])
+  expect(w.writes).toEqual([ROOT])
 })
 
 test('the session repo is refreshed after each turn', async ($, on) => {
-  const w = world(on, { [PATH]: own, [OTHER]: JSON.stringify({ version: 1, items: [{ id: 'o1', text: 'Cabo del otro', priority: 'high', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] }) }, { repos: REPOS })
+  const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: own, [OTHER]: JSON.stringify({ version: 1, items: [{ id: 'o1', text: 'Cabo del otro', priority: 'high', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] }) } })
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
   turns(on)
   await w.start($)
@@ -86,7 +86,7 @@ test('the session repo is refreshed after each turn', async ($, on) => {
 })
 
 test('the sweep files a new item in a repo touched this turn when Haiku names it', async ($, on) => {
-  const w = world(on, { [PATH]: own }, { repos: REPOS, branches: { '/other': 'feat/o' } })
+  const w = world(on, {}, { repos: REPOS, branches: { '/other': 'feat/o' }, refs: { [ROOT]: own } })
   let asked = ''
   on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":["a1"]}') })
   tools(on)
@@ -112,7 +112,7 @@ test('the sweep falls back to the session repo when the path is not a candidate'
   await endTurn($)
   await w.clock.settle()
   expect(w.saved().map((i: any) => i.text)).toEqual(['Cabo con repo inventado'])
-  expect(w.writes).toEqual([PATH])
+  expect(w.writes).toEqual([ROOT])
 })
 
 test('a prompt with only the session repo carries no repo section', async ($, on) => {
@@ -207,7 +207,7 @@ test('outside git nothing touches the session filesystem', async ($, on) => {
   expect((await $.classic.Stop({ stop_hook_active: false })).block).toBeUndefined()
   expect((await $.prompt.context({ blocks: [] })).blocks).toEqual([])
   expect(w.writes).toEqual([])
-  expect(w.reads).toEqual([])
+  expect(w.gitReads).toEqual([])
   expect(w.toasts).toEqual([])
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
   expect(await band.find({ type: 'Svg' })).toBeDefined()
@@ -237,7 +237,7 @@ test('outside git a note with a valid repo writes only there', async ($, on) => 
   const r = await $.tool.call({ tool: TOOL, text: 'Cabo con ruta', priority: 'low', repo: '/other' })
   expect(String(r.result)).toMatch(/^Apuntado/)
   expect(w.writes).toEqual([OTHER])
-  expect(w.reads).not.toContain(PATH)
+  expect(w.gitReads).not.toContain(ROOT)
 })
 
 test('outside git the pane says so in place of the lists', async ($, on) => {
@@ -261,7 +261,7 @@ test('in a repo the pane keeps its lists', async ($, on) => {
 })
 
 test('when git cannot answer after a turn the session keeps its repo', async ($, on) => {
-  const w = world(on, { [PATH]: own }, { repos: REPOS })
+  const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: own } })
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
   turns(on)
   await w.start($)
@@ -298,7 +298,7 @@ test('a repo under .claude is never a candidate nor written', async ($, on) => {
   await endTurn($)
   await w.clock.settle()
   expect(asked).not.toContain('Repos candidatos')
-  expect(w.writes).toEqual([PATH])
+  expect(w.writes).toEqual([ROOT])
   expect(w.saved().map((i: any) => i.text)).toEqual(['Cabo del plugin'])
 })
 
@@ -324,14 +324,14 @@ test('a session whose repo is the home directory behaves as outside git', async 
   await endTurn($)
   await w.clock.settle()
   expect(w.writes).toEqual([])
-  expect(w.reads).toEqual([])
+  expect(w.gitReads).toEqual([])
 })
 
 test('with HOME unknown only the .claude rule applies', async ($, on) => {
   const w = world(on, {}, { repos: { '/Users/m': '/Users/m' }, root: '/Users/m/work', home: null })
   await w.start($)
   await $.tool.call({ tool: TOOL, text: 'Cabo en casa', priority: 'low' })
-  expect(w.writes).toEqual(['/Users/m/.claude/loose-ends.json'])
+  expect(w.writes).toEqual(['/Users/m'])
 })
 
 test('a directory that was not a repo is looked up again on the next turn, a repo is not', async ($, on) => {
@@ -363,15 +363,15 @@ test('a directory that was not a repo is looked up again on the next turn, a rep
 
 test('the failure message names the error of the repo it wrote to', async ($, on) => {
   const conflict = '<<<<<<< HEAD\n{}\n=======\n>>>>>>> x\n'
-  const w = world(on, { [PATH]: conflict, [OTHER]: '{ roto' }, { repos: REPOS })
+  const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: conflict, [OTHER]: '{ roto' } })
   await w.start($)
   const foreign = await $.tool.call({ tool: TOOL, text: 'Cabo en otro', priority: 'low', repo: '/other' })
-  expect(String(foreign.result)).toContain('/other/.claude/loose-ends.json')
+  expect(String(foreign.result)).toContain('/other (refs/loose-ends)')
   expect(String(foreign.result)).toContain('(json)')
   const own = await $.tool.call({ tool: TOOL, text: 'Cabo en la sesión', priority: 'low' })
   expect(String(own.result)).toContain('(conflict)')
   expect(String(own.result)).not.toContain('/other')
-  w.fs[OTHER] = JSON.stringify({ version: 1, items: [] })
+  w.setRef(OTHER, JSON.stringify({ version: 1, items: [] }))
   const fixed = await $.tool.call({ tool: TOOL, text: 'Cabo en otro', priority: 'low', repo: '/other' })
   expect(String(fixed.result)).toMatch(/^Apuntado/)
 })
@@ -436,8 +436,8 @@ test('a Claude Code worktree under .claude is a valid session repo, target and t
   await endTurn($)
   await w.clock.settle()
   expect(asked).toContain('- y: /other/.claude/worktrees/y')
-  expect(w.savedAt(`${wt}/.claude/loose-ends.json`).map((i: any) => i.text)).toEqual(['Cabo en el worktree'])
-  expect(w.savedAt('/other/.claude/worktrees/y/.claude/loose-ends.json').map((i: any) => i.text)).toEqual(['Cabo por ruta', 'Cabo del worktree ajeno'])
+  expect(w.savedAt(wt).map((i: any) => i.text)).toEqual(['Cabo en el worktree'])
+  expect(w.savedAt('/other/.claude/worktrees/y').map((i: any) => i.text)).toEqual(['Cabo por ruta', 'Cabo del worktree ajeno'])
 })
 
 test('with HOME unknown a plugin repo under .claude/plugins is still ignored', async ($, on) => {
@@ -462,8 +462,8 @@ test('Windows: a drive-letter session repo and touched repo, HOME from USERPROFI
   await endTurn($)
   await w.clock.settle()
   expect(asked).toContain(`Repos candidatos:\n- proj: ${WIN}\n- other: ${WIN_OTHER}`)
-  expect(w.savedAt(`${WIN}/.claude/loose-ends.json`).map((i: any) => i.text)).toEqual(['Cabo para la sesión'])
-  expect(w.savedAt(`${WIN_OTHER}/.claude/loose-ends.json`).map((i: any) => i.text)).toEqual(['Cabo para el otro'])
+  expect(w.savedAt(WIN).map((i: any) => i.text)).toEqual(['Cabo para la sesión'])
+  expect(w.savedAt(WIN_OTHER).map((i: any) => i.text)).toEqual(['Cabo para el otro'])
   const r = await $.tool.call({ tool: TOOL, text: 'Cabo por ruta', priority: 'low', repo: 'C:\\Users\\x\\other\\src\\b.ts' })
   expect(String(r.result)).toMatch(/^Apuntado/)
   expect(w.writes.every((p: string) => !p.includes('\\'))).toBe(true)
@@ -478,19 +478,19 @@ test('Windows: the home directory as a repo is outside git', async ($, on) => {
 })
 
 test('an unreadable session file is flagged in the band and named by its absolute path in the pane', async ($, on) => {
-  const w = world(on, { [PATH]: '{ roto' }, { repos: REPOS })
+  const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: '{ roto' } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
   expect((await band.find({ key: 'open-pane' }))?.text).toBe('No puedo leer loose-ends.json · [Ver](file:///loose-ends/ver)')
   await band.unmount()
   const pane = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
-  expect((await pane.find({ type: 'Text', text: /No puedo leer/ }))?.text).toContain(PATH)
+  expect((await pane.find({ type: 'Text', text: /No puedo leer/ }))?.text).toContain('/proj (refs/loose-ends)')
   await pane.unmount()
 })
 
 test('leaving git after a turn empties the band and the context', async ($, on) => {
-  const w = world(on, { [PATH]: own }, { repos: REPOS })
+  const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: own } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
   turns(on)
@@ -509,7 +509,7 @@ test('the pane folds the other branches and the done list when the session repo 
     { id: 'a1', text: 'Cabo de la sesión', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' },
     { id: 'o1', text: 'De otra rama', priority: 'low', status: 'open', branch: 'feat/x', createdAt: '2026-10-04T09:00:00.000Z' },
   ] })
-  const w = world(on, { [PATH]: stale, [OTHER]: stale }, { repos: REPOS, startedAt: Date.parse('2026-10-04T09:00:00.000Z'), log: 'abc1234\tfeat: algo\n' })
+  const w = world(on, {}, { repos: REPOS, startedAt: Date.parse('2026-10-04T09:00:00.000Z'), log: 'abc1234\tfeat: algo\n', refs: { [ROOT]: stale, [OTHER]: stale } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   turns(on)
   await w.start($)

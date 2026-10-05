@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PATH, world } from './world.ts'
+import { ROOT, world } from './world.ts'
 
 const BAND = { component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as any }
 const PANE = { component: 'Pane', requestId: 'loose-ends', props: { title: 'Cuaderno', isFocused: true, bodyColumns: 60, placement: 'dock' } as any }
@@ -9,7 +9,7 @@ const file = JSON.stringify({ version: 1, items: [
 ] })
 
 test('band: Chispa on desktop, face on terminal, counters for this branch', async ($, on) => {
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const desk = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
@@ -23,7 +23,7 @@ test('band: Chispa on desktop, face on terminal, counters for this branch', asyn
 })
 
 test('pane buttons change the file', async ($, on) => {
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   on('prompt.submit', ($: any, e: any) => ({ text: e.text }))
   await w.start($)
@@ -54,7 +54,7 @@ test('pane buttons change the file', async ($, on) => {
 })
 
 test('Hazlo ahora submits a prompt and marks the item reminded', async ($, on) => {
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   let sent = ''
   on('prompt.submit', ($: any, e: any) => { sent = e.text; return { text: e.text } })
@@ -69,7 +69,7 @@ test('Hazlo ahora submits a prompt and marks the item reminded', async ($, on) =
 })
 
 test('the mobile surface draws no pane', async ($, on) => {
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('ui.render', () => ({ type: 'Text', children: ['engine pane'] }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'mobile', ...PANE })
@@ -88,13 +88,13 @@ test('/pendientes opens the pane', async ($, on) => {
 })
 
 test('Hazlo ahora does not submit when the file became unreadable', async ($, on) => {
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   let sent = ''
   on('prompt.submit', ($: any, e: any) => { sent = e.text; return { text: e.text } })
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
-  w.fs[PATH] = '<<<<<<< HEAD\n{}\n=======\n>>>>>>> x\n'
+  w.setRef(ROOT, '<<<<<<< HEAD\n{}\n=======\n>>>>>>> x\n')
   await ui.press({ key: 'now-a1' })
   await w.clock.settle()
   expect(sent).toBe('')
@@ -102,7 +102,7 @@ test('Hazlo ahora does not submit when the file became unreadable', async ($, on
 })
 
 test('a failing write from a pane button is logged, not thrown', async ($, on) => {
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
@@ -116,7 +116,7 @@ test('a failing write from a pane button is logged, not thrown', async ($, on) =
 })
 
 test('the discard picker closes once the item is resolved', async ($, on) => {
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
@@ -138,7 +138,7 @@ test('the discard picker closes once the item is resolved', async ($, on) => {
 })
 
 test('a throwing log inside a failed background action is swallowed', async ($, on) => {
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
@@ -157,7 +157,7 @@ const two = JSON.stringify({ version: 1, items: [
 ] })
 
 test('the priority buttons set the priority and keep the item expanded', async ($, on) => {
-  const w = world(on, { [PATH]: two })
+  const w = world(on, {}, { refs: { [ROOT]: two } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
@@ -176,7 +176,7 @@ test('the priority buttons set the priority and keep the item expanded', async (
 })
 
 test('only one item is expanded at a time and more toggles it', async ($, on) => {
-  const w = world(on, { [PATH]: two })
+  const w = world(on, {}, { refs: { [ROOT]: two } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
@@ -194,7 +194,7 @@ test('only one item is expanded at a time and more toggles it', async ($, on) =>
 })
 
 test('a new session starts with everything collapsed', async ($, on) => {
-  const w = world(on, { [PATH]: two })
+  const w = world(on, {}, { refs: { [ROOT]: two } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
@@ -214,7 +214,7 @@ test('a new session starts with everything collapsed', async ($, on) => {
 })
 
 test('resolving the expanded item collapses it', async ($, on) => {
-  const w = world(on, { [PATH]: two })
+  const w = world(on, {}, { refs: { [ROOT]: two } })
   on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
   await w.start($)
   const ui = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })

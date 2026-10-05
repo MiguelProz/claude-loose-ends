@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PATH, world } from './world.ts'
+import { ROOT, world } from './world.ts'
 
 const TOOL = 'mcp__loose-ends__note_loose_end'
 const stopBottom = (on: any, block?: string) => on('classic.Stop', () => (block ? { block } : {}))
@@ -17,11 +17,11 @@ test('the tool writes the file and dedupes', async ($, on) => {
 
 test('a file with conflict markers is never overwritten', async ($, on) => {
   const broken = '{\n<<<<<<< HEAD\n"items": []\n=======\n>>>>>>> x\n}'
-  const w = world(on, { [PATH]: broken })
+  const w = world(on, {}, { refs: { [ROOT]: broken } })
   await w.start($)
   const r = await $.tool.call({ tool: TOOL, text: 'algo', priority: 'low' })
   expect(String(r.result)).toContain('ilegible')
-  expect(w.fs[PATH]).toBe(broken)
+  expect(w.refText(ROOT)).toBe(broken)
 })
 
 test('the system prompt gets the guide section', async ($, on) => {
@@ -33,7 +33,7 @@ test('the system prompt gets the guide section', async ($, on) => {
 
 test('context carries open items', async ($, on) => {
   const file = JSON.stringify({ version: 1, items: [{ id: 'a1', text: 'Tipar drafts', priority: 'high', status: 'open', branch: 'main', createdAt: '2026-10-01T00:00:00.000Z' }] })
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
   await w.start($)
   const r = await $.prompt.context({ blocks: [] })
@@ -43,7 +43,7 @@ test('context carries open items', async ($, on) => {
 
 test('Stop reminds queued items once, then they go back to open', async ($, on) => {
   const file = JSON.stringify({ version: 1, items: [{ id: 'q1', text: 'Docs de jsonld', priority: 'medium', status: 'queued', branch: 'main', createdAt: '2026-10-01T00:00:00.000Z' }] })
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   stopBottom(on)
   await w.start($)
   const first = await $.classic.Stop({ stop_hook_active: false })
@@ -55,7 +55,7 @@ test('Stop reminds queued items once, then they go back to open', async ($, on) 
 
 test('Stop stays quiet when another Stop hook blocks', async ($, on) => {
   const file = JSON.stringify({ version: 1, items: [{ id: 'q1', text: 'Docs', priority: 'medium', status: 'queued', branch: 'main', createdAt: '2026-10-01T00:00:00.000Z' }] })
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   stopBottom(on, 'typecheck falla')
   await w.start($)
   const r = await $.classic.Stop({ stop_hook_active: false })
@@ -93,21 +93,21 @@ test('a too-short text is not reported as a duplicate', async ($, on) => {
 const conflict = '<<<<<<< HEAD\n{"items":[]}\n=======\n>>>>>>> x\n'
 
 test('prompt.context with an unreadable file adds no block and leaves it untouched', async ($, on) => {
-  const w = world(on, { [PATH]: conflict })
+  const w = world(on, {}, { refs: { [ROOT]: conflict } })
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
   await w.start($)
   const r = await $.prompt.context({ blocks: [] })
   expect(r.blocks).toEqual([])
-  expect(w.fs[PATH]).toBe(conflict)
+  expect(w.refText(ROOT)).toBe(conflict)
 })
 
 test('Stop with an unreadable file adds no block and leaves it untouched', async ($, on) => {
-  const w = world(on, { [PATH]: conflict })
+  const w = world(on, {}, { refs: { [ROOT]: conflict } })
   stopBottom(on)
   await w.start($)
   const r = await $.classic.Stop({ stop_hook_active: false })
   expect(r.block).toBeUndefined()
-  expect(w.fs[PATH]).toBe(conflict)
+  expect(w.refText(ROOT)).toBe(conflict)
 })
 
 test('a new note shows a toast with its text', async ($, on) => {

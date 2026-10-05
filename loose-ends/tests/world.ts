@@ -1,12 +1,16 @@
 import { mock } from 'claude-code/testing'
+import { REF, REMOTE_REF, ZERO } from '../lib/refstore.mjs'
 
 export const ROOT = '/proj'
-export const PATH = `${ROOT}/.claude/loose-ends.json`
-export const pathOf = (top: string) => `${top}/.claude/loose-ends.json`
+// The file a 0.3 version kept in the working tree; only the import reads it.
+export const legacyOf = (top: string) => `${top}/.claude/loose-ends.json`
+export const LEGACY = legacyOf(ROOT)
 
 type Opts = {
   branch?: string
   log?: string
+  // what `git log -1 --format=%h` answers
+  head?: string
   startedAt?: number
   root?: string
   // directory prefix -> git toplevel; a directory under none of them is not in a repo (exit 128)
@@ -19,6 +23,12 @@ type Opts = {
   home?: string | null
   // %USERPROFILE%, for when HOME is unset (Windows)
   userProfile?: string
+  // git toplevel -> the blob text its refs/loose-ends holds
+  refs?: Record<string, string>
+  // git toplevel -> origin's refs/loose-ends blob text ('' for an origin without the ref); toplevels not listed have no origin
+  remote?: Record<string, string>
+  // git toplevel -> git config loose-ends.sync
+  sync?: Record<string, string>
 }
 
 // The test host runs on POSIX and resolves a drive-letter path against its cwd before the stub sees it; undo that.
@@ -32,12 +42,46 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   const runs: string[][] = []
   const logs: string[] = []
   const toasts: string[] = []
+  // toplevels whose refs/loose-ends moved, in order
   const writes: string[] = []
+  // toplevels whose refs/loose-ends was read
+  const gitReads: string[] = []
   const reads: string[] = []
+  const pushes: string[] = []
+  const fetches: string[] = []
+  // the environment each commit-tree ran with
+  const envs: any[] = []
   const commands: any[] = []
   const state = { invalidations: 0 }
   const fs: Record<string, string> = { ...files }
   const clock = mock.clock(on, { now: Date.parse('2026-10-04T10:00:00.000Z') })
+
+  // Object store: sha -> body. A blob's body is its text, a tree's the sha of its one blob, a commit's the sha of its tree.
+  let count = 0
+  const objects = new Map<string, string>()
+  const put = (body: string) => {
+    const sha = (++count).toString(16).padStart(40, '0')
+    objects.set(sha, body)
+    return sha
+  }
+  const commitOf = (text: string) => put(put(put(text)))
+  const blobOf = (commit?: string | null) => {
+    const tree = commit ? objects.get(commit) : undefined
+    const blob = tree ? objects.get(tree) : undefined
+    return blob ? objects.get(blob) : undefined
+  }
+  const refsOf: Record<string, Record<string, string>> = {}
+  const git = (top: string) => (refsOf[top] ??= {})
+  for (const [top, text] of Object.entries(opts.refs ?? {})) git(top)[REF] = commitOf(text)
+  // toplevel -> sha of origin's refs/loose-ends (null: origin exists without it)
+  const remotes: Record<string, string | null> = {}
+  for (const [top, text] of Object.entries(opts.remote ?? {})) remotes[top] = text === '' ? null : commitOf(text)
+  const config: Record<string, string> = { ...(opts.sync ?? {}) }
+  // another session moving refs/loose-ends right before the next update-ref (`times` updates in a row)
+  const races: Record<string, { text: string; times: number }> = {}
+  // another machine pushing to origin right before the next push
+  const remoteRaces: Record<string, string> = {}
+
   const topOf = (dir: string) => {
     // like real git: a file is not a directory, and neither is a path that does not exist
     if (dir in fs || /[^/]\.[A-Za-z0-9]+$/.test(dir)) return null
@@ -50,7 +94,7 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   on('session.usage', () => ({ value: { startedAt: opts.startedAt ?? clock.now(), context: { tokens: 0, window: 200000, percent: 0 }, rateLimits: [] } }))
   on('fs.exists', ($: any, e: any) => { reads.push(fsKey(e.path)); return { value: fsKey(e.path) in fs } })
   on('fs.read', ($: any, e: any) => { reads.push(fsKey(e.path)); return { value: fs[fsKey(e.path)] } })
-  on('fs.write', ($: any, e: any) => { if (flags.failWrites) throw new Error('disco lleno'); writes.push(fsKey(e.path)); fs[fsKey(e.path)] = e.text; return { value: undefined } })
+  on('fs.write', ($: any, e: any) => { if (flags.failWrites) throw new Error('disco lleno'); fs[fsKey(e.path)] = e.text; return { value: undefined } })
   on('process.run', ($: any, e: any) => {
     runs.push(e.argv)
     if (flags.throwGit) throw new Error('git no arranca')
@@ -58,12 +102,80 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
     if (flags.failGit) return result(0, undefined)
     const dashC = e.argv[1] === '-C'
     const dir = String(dashC ? e.argv[2] : e.init?.cwd ?? root).replace(/\\/g, '/')
-    const args = dashC ? e.argv.slice(3) : e.argv.slice(1)
+    const args: string[] = dashC ? e.argv.slice(3) : e.argv.slice(1)
     const top = topOf(dir)
     if (top === null) return result(128, '')
-    if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') return result(0, `${top}\n`)
-    if (args[0] === 'rev-parse') return result(0, `${opts.branches?.[top] ?? branch}\n`)
-    return result(0, opts.log ?? '')
+    const refs = git(top)
+    const stdin = String(e.init?.stdin ?? '')
+    switch (args[0]) {
+      case 'rev-parse': {
+        if (args.includes('--show-toplevel')) return result(0, `${top}\n`)
+        if (args.includes('--git-common-dir')) return result(0, `${top}/.git\n`)
+        if (args.includes('--verify')) {
+          if (args.at(-1) === REF) gitReads.push(top)
+          const sha = refs[args.at(-1) as string]
+          return sha ? result(0, `${sha}\n`) : result(1, '')
+        }
+        return result(0, `${opts.branches?.[top] ?? branch}\n`)
+      }
+      case 'cat-file': {
+        const text = blobOf(args[2].split(':')[0])
+        return text === undefined ? result(128, '') : result(0, text)
+      }
+      case 'hash-object':
+        return flags.failWrites ? result(1, '') : result(0, `${put(stdin)}\n`)
+      case 'mktree':
+        return result(0, `${put(stdin.split(/\s+/)[2])}\n`)
+      case 'commit-tree':
+        envs.push(e.init?.env)
+        return result(0, `${put(args[1])}\n`)
+      case 'update-ref': {
+        const [, ref, next, prev] = args
+        if (prev === undefined) {
+          refs[ref] = next
+          return result(0, '')
+        }
+        const race = races[top]
+        if (race) {
+          refs[REF] = commitOf(race.text)
+          if (--race.times === 0) delete races[top]
+        }
+        if ((refs[ref] ?? ZERO) !== prev) return result(1, '')
+        refs[ref] = next
+        writes.push(top)
+        return result(0, '')
+      }
+      case 'remote':
+        return result(0, top in remotes ? 'origin\n' : '')
+      case 'fetch': {
+        if (!(top in remotes) || remotes[top] === null) return result(128, '')
+        fetches.push(top)
+        refs[REMOTE_REF] = remotes[top] as string
+        return result(0, '')
+      }
+      case 'push': {
+        if (!(top in remotes)) return result(128, '')
+        if (remoteRaces[top] !== undefined) {
+          remotes[top] = commitOf(remoteRaces[top])
+          delete remoteRaces[top]
+        }
+        const lease = args.find(a => a.startsWith('--force-with-lease='))
+        const expect = lease === undefined ? undefined : lease.slice(lease.indexOf(':') + 1)
+        if (expect !== undefined && (remotes[top] ?? '') !== expect) return result(1, '')
+        remotes[top] = refs[REF]
+        pushes.push(top)
+        return result(0, '')
+      }
+      case 'config': {
+        if (args[1] === '--get') return config[top] === undefined ? result(1, '') : result(0, `${config[top]}\n`)
+        config[top] = args[2]
+        return result(0, '')
+      }
+      case 'log':
+        return args.includes('-1') ? result(0, `${opts.head ?? 'abc1234'}\n`) : result(0, opts.log ?? '')
+      default:
+        return result(0, opts.log ?? '')
+    }
   })
   on('tool.register', ($: any, e: any) => ({ value: { tool: `mcp__loose-ends__${e.name}` } }))
   on('command.register', ($: any, e: any) => { commands.push(e); return { value: { command: e.name } } })
@@ -72,9 +184,15 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   on('ui.log', ($: any, e: any) => { if (flags.failLog) throw new Error('log roto'); logs.push(e.message ?? e.text ?? JSON.stringify(e)); return { value: undefined } })
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
   const start = ($: any) => $.session.start({ cwd: root, surface: 'desktop', isInteractive: true })
-  const savedAt = (path: string) => JSON.parse(fs[path] ?? '{"items":[]}').items
-  const saved = () => savedAt(PATH)
+  const refText = (top: string) => blobOf(refsOf[top]?.[REF])
+  const savedAt = (top: string) => JSON.parse(refText(top) ?? '{"items":[]}').items
+  const saved = () => savedAt(ROOT)
+  // another session writing the ref directly
+  const setRef = (top: string, text: string) => { git(top)[REF] = commitOf(text) }
+  const race = (top: string, text: string, times = 1) => { races[top] = { text, times } }
+  const remoteRace = (top: string, text: string) => { remoteRaces[top] = text }
+  const remoteText = (top: string) => blobOf(remotes[top])
   const setBranch = (b: string) => { branch = b }
   const setRoot = (r: string) => { root = r }
-  return { fs, clock, start, saved, savedAt, setBranch, setRoot, flags, runs, logs, toasts, writes, reads, commands, state }
+  return { fs, clock, start, saved, savedAt, refText, setRef, race, remoteRace, remoteText, setBranch, setRoot, flags, runs, logs, toasts, writes, gitReads, reads, pushes, fetches, envs, config, commands, state }
 }

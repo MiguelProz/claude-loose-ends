@@ -1,9 +1,10 @@
-import { FILE, active, addItem, close, counts, dueReminders, expireReminded, markReminded, parseFile, queue, reopen, serialize, setPriority } from '../lib/store.mjs'
+import { active, addItem, close, counts, dueReminders, expireReminded, markReminded, parseFile, queue, reopen, serialize, setPriority } from '../lib/store.mjs'
 import { FLASH_MS, bashFailed, classifyBash, initialMood, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
 import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
 import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, repoName } from '../lib/repos.mjs'
 import { renderBand, renderPane } from '../lib/view.mjs'
+import { GIT_ENV, HASH_ARGS, REF, TREE_ARGS, blobArgs, commitArgs, firstLine, shaArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
 
 const NO_GIT_NOTE = 'Esta sesión no está en un repo git: indica "repo" con la ruta del repo del cabo.'
 const NOT_A_REPO = 'La ruta no está dentro de un repo git: no se ha apuntado.'
@@ -11,6 +12,7 @@ const MAX_WALK = 3
 const MAX_CACHE = 500
 const MAX_PATHS_PER_CALL = 10
 const MAX_TOUCHED = 6
+const MAX_TRIES = 3
 
 let items = []
 let fileError = null
@@ -66,10 +68,45 @@ async function nowIso($) {
   return new Date(await $.clock.now()).toISOString()
 }
 
-async function readRepo($, root) {
-  const path = `${root}/${FILE}`
-  const text = (await $.fs.exists(path)) ? await $.fs.read(path) : null
-  return parseFile(text)
+// A repo's loose ends and the commit they came from; `sha` is null when the ref does not exist yet.
+async function readRef($, root, ref = REF) {
+  const head = await $.process.run(['git', '-C', root, ...shaArgs(ref)])
+  if (head.exitCode !== 0) return { ok: true, items: [], sha: null }
+  const sha = firstLine(head.stdout)
+  if (!sha) return { ok: false, error: 'git' }
+  const blob = await $.process.run(['git', '-C', root, ...blobArgs(sha)])
+  if (blob.exitCode !== 0) return { ok: false, error: 'blob' }
+  const parsed = parseFile(blob.stdout)
+  return parsed.ok ? { ...parsed, sha } : parsed
+}
+
+// Points the ref at a new commit holding `items`; false when another session moved it since `prev` was read.
+async function writeRef($, root, items, prev) {
+  const blob = await $.process.run(['git', '-C', root, ...HASH_ARGS], { stdin: serialize(items) })
+  const blobSha = blob.exitCode === 0 ? firstLine(blob.stdout) : null
+  if (!blobSha) throw new Error('git hash-object falló')
+  const tree = await $.process.run(['git', '-C', root, ...TREE_ARGS], { stdin: treeInput(blobSha) })
+  const treeSha = tree.exitCode === 0 ? firstLine(tree.stdout) : null
+  if (!treeSha) throw new Error('git mktree falló')
+  const commit = await $.process.run(['git', '-C', root, ...commitArgs(treeSha, prev)], { env: GIT_ENV })
+  const commitSha = commit.exitCode === 0 ? firstLine(commit.stdout) : null
+  if (!commitSha) throw new Error('git commit-tree falló')
+  const moved = await $.process.run(['git', '-C', root, ...updateArgs(commitSha, prev)])
+  return moved.exitCode === 0
+}
+
+// Read-modify-write of a repo's loose ends, again from the top when another session moved the ref in between.
+// `fn` may run more than once, so it must not have side effects beyond what it returns.
+async function commitItems($, root, fn) {
+  for (let tries = 0; tries < MAX_TRIES; tries++) {
+    const read = await readRef($, root)
+    if (!read.ok) return { error: read.error }
+    const result = fn(read.items)
+    const nextItems = Array.isArray(result) ? result : result.items
+    if (serialize(nextItems) === serialize(read.items)) return { result, items: read.items }
+    if (await writeRef($, root, nextItems, read.sha)) return { result, items: nextItems }
+  }
+  return { error: 'busy' }
 }
 
 // Loads the session repo's items into memory; outside git there is nothing to read and nothing is touched.
@@ -79,7 +116,7 @@ async function load($) {
     fileError = null
     return items
   }
-  const parsed = await readRepo($, sessionRepo)
+  const parsed = await readRef($, sessionRepo)
   if (!parsed.ok) {
     fileError = parsed.error
     return null
@@ -89,21 +126,9 @@ async function load($) {
   return items
 }
 
-// Read-modify-write on another repo's file: its items never enter memory.
-async function mutateForeign($, fn, root, report) {
-  const parsed = await readRepo($, root)
-  if (!parsed.ok) {
-    if (report) report.error = parsed.error
-    return null
-  }
-  const result = fn(parsed.items, false)
-  const nextItems = Array.isArray(result) ? result : result.items
-  if (serialize(nextItems) !== serialize(parsed.items)) await $.fs.write(`${root}/${FILE}`, serialize(nextItems))
-  return result
-}
-
-// Read-modify-write on a repo's file (the session's by default, resolved when the write runs); callers go through `mutate`, which serializes them.
-// `fn(list, isSession)` says whether the file was the session's when it ran; `report.error` gets why an unreadable file was left alone.
+// Read-modify-write on a repo's ref (the session's by default, resolved when the write runs); callers go through
+// `mutate`, which serializes them. `fn(list, isSession)` says whether the ref was the session's when it ran;
+// `report.error` gets why an unreadable or busy ref was left alone. Only the session repo's items live in memory.
 async function mutateNow($, fn, root, report) {
   const target = root === undefined ? sessionRepo : root
   if (target === null) {
@@ -111,21 +136,24 @@ async function mutateNow($, fn, root, report) {
     $.ui.invalidate('ui.render')
     return null
   }
-  if (target !== sessionRepo) return mutateForeign($, fn, target, report)
-  const fresh = await load($)
-  if (fresh === null) {
-    if (report) report.error = fileError
-    $.ui.invalidate('ui.render')
+  const isSession = target === sessionRepo
+  const done = await commitItems($, target, list => fn(list, isSession))
+  if (done.error) {
+    if (report) report.error = done.error
+    if (isSession) {
+      fileError = done.error
+      $.ui.invalidate('ui.render')
+    }
     return null
   }
-  const result = fn(fresh, true)
-  const nextItems = Array.isArray(result) ? result : result.items
-  if (serialize(nextItems) !== serialize(fresh)) await $.fs.write(`${target}/${FILE}`, serialize(nextItems))
-  items = nextItems
-  if (discarding && !active(items).some(i => i.id === discarding)) discarding = null
-  if (expanded && !active(items).some(i => i.id === expanded)) expanded = null
-  $.ui.invalidate('ui.render')
-  return result
+  if (isSession) {
+    fileError = null
+    items = done.items
+    if (discarding && !active(items).some(i => i.id === discarding)) discarding = null
+    if (expanded && !active(items).some(i => i.id === expanded)) expanded = null
+    $.ui.invalidate('ui.render')
+  }
+  return done.result
 }
 
 async function mutate($, fn, root, report) {
@@ -310,7 +338,7 @@ async function sweep($, answer, touchedNow) {
 }
 
 function bandModel(now) {
-  return { mood: moodAt(mood, now), plan: planProgress(plan), counts: counts(items, branch), fileError, filePath: sessionRepo ? `${sessionRepo}/${FILE}` : FILE }
+  return { mood: moodAt(mood, now), plan: planProgress(plan), counts: counts(items, branch), fileError, filePath: sessionRepo ? `${sessionRepo} (refs/loose-ends)` : 'refs/loose-ends' }
 }
 
 function paneModel(now) {
@@ -321,7 +349,7 @@ function paneModel(now) {
     branch,
     working,
     fileError,
-    filePath: sessionRepo ? `${sessionRepo}/${FILE}` : FILE,
+    filePath: sessionRepo ? `${sessionRepo} (refs/loose-ends)` : 'refs/loose-ends',
     noRepo: sessionRepo === null,
     discarding,
     expanded,
@@ -422,7 +450,7 @@ export function register(on) {
       if (!target) return { result: NOT_A_REPO }
     } else if (!target) return { result: NO_GIT_NOTE }
     const { added, error } = await note($, { text: e.text, priority: e.priority, evidence: e.evidence, source: 'tool' }, target)
-    if (added === undefined) return { result: `No se pudo apuntar: ${target}/${FILE} está ilegible (${error}).` }
+    if (added === undefined) return { result: `No se pudo apuntar: los cabos de ${target} (refs/loose-ends) están ilegibles (${error}).` }
     if (added && added.priority === 'high') await feel($, { type: 'worry' })
     return { result: added ? `Apuntado (${added.id}): ${added.text}` : 'Ya estaba apuntado.' }
   })

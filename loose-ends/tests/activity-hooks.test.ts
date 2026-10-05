@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PATH, world } from './world.ts'
+import { ROOT, world } from './world.ts'
 
 const ok = (on: any) => on('tool.call', ($: any, e: any) => {
   if (e.tool === 'TaskCreate') return { result: { task: { id: 't1', subject: e.subject } } }
@@ -14,7 +14,7 @@ const answered = (text: string) => ({ value: { isAnswered: true, text, usage: { 
 
 test('sweep adds new loose ends and resolves open ones', async ($, on) => {
   const file = JSON.stringify({ version: 1, items: [{ id: 'a1', text: 'Tipar drafts', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-01T00:00:00.000Z' }] })
-  const w = world(on, { [PATH]: file })
+  const w = world(on, {}, { refs: { [ROOT]: file } })
   let asked = ''
   on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Comprimir foto 3","priority":"low","evidence":"lo dejo para otro día"}],"resolved":["a1"]}') })
   done(on)
@@ -73,9 +73,9 @@ test('tool calls still run through and are observed', async ($, on) => {
 
 test('sweep never overwrites an item the user closed meanwhile', async ($, on) => {
   const item = { id: 'a1', text: 'Tipar drafts', priority: 'medium', status: 'open', branch: 'main', createdAt: '2026-10-01T00:00:00.000Z' }
-  const w = world(on, { [PATH]: JSON.stringify({ version: 1, items: [item] }) })
+  const w = world(on, {}, { refs: { [ROOT]: JSON.stringify({ version: 1, items: [item] }) } })
   on('model.complete', () => {
-    w.fs[PATH] = JSON.stringify({ version: 1, items: [{ ...item, status: 'dismissed', closedBy: 'user', closedAt: '2026-10-04T10:00:01.000Z' }] })
+    w.setRef(ROOT, JSON.stringify({ version: 1, items: [{ ...item, status: 'dismissed', closedBy: 'user', closedAt: '2026-10-04T10:00:01.000Z' }] }))
     return answered('{"new":[],"resolved":["a1"]}')
   })
   done(on)
@@ -120,28 +120,27 @@ test('a git failure after the turn does not reject the hook', async ($, on) => {
   expect(w.logs.some(l => l.includes('leer la rama tras el turno falló'))).toBe(true)
 })
 
-test('turn end refreshes the items from a file edited by hand', async ($, on) => {
+test('turn end refreshes the items from a ref another session moved', async ($, on) => {
   const w = world(on)
   done(on)
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
   await w.start($)
-  w.fs[PATH] = JSON.stringify({ version: 1, items: [{ id: 'h1', text: 'Escrito a mano', priority: 'high', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
+  w.setRef(ROOT, JSON.stringify({ version: 1, items: [{ id: 'h1', text: 'Escrito a mano', priority: 'high', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] }))
   await $.turn.complete({ answer: 'corto', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
   const r = await $.prompt.context({ blocks: [] })
   expect(r.blocks.at(-1).text).toContain('Escrito a mano')
 })
 
-test('with git failing the items still refresh before the sweep', async ($, on) => {
-  const w = world(on)
+test('with git failing the sweep still runs on the last items it knew', async ($, on) => {
+  const known = JSON.stringify({ version: 1, items: [{ id: 'n1', text: 'Conocido antes', priority: 'low', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
+  const w = world(on, {}, { refs: { [ROOT]: known } })
   let asked = ''
   on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[],"resolved":[]}') })
   done(on)
   await w.start($)
-  w.fs[PATH] = JSON.stringify({ version: 1, items: [{ id: 'n1', text: 'Añadido entre turnos', priority: 'low', status: 'open', branch: 'main', createdAt: '2026-10-04T09:00:00.000Z' }] })
   w.flags.failGit = true
   await $.turn.complete({ answer: longAnswer('y'), durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' })
   await w.clock.settle()
   expect(w.logs.some(l => l.includes('leer la rama tras el turno falló'))).toBe(true)
-  expect(w.logs.some(l => l.includes('leer los commits tras el turno falló'))).toBe(true)
-  expect(asked).toContain('n1: Añadido entre turnos')
+  expect(asked).toContain('n1: Conocido antes')
 })
