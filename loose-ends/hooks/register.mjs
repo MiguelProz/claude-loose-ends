@@ -1,10 +1,10 @@
-import { active, addItem, close, counts, dueReminders, expireReminded, markReminded, parseFile, queue, reopen, serialize, setPriority } from '../lib/store.mjs'
+import { FILE, active, addItem, close, counts, dueReminders, expireReminded, markReminded, parseFile, queue, reopen, serialize, setPriority } from '../lib/store.mjs'
 import { FLASH_MS, bashFailed, classifyBash, initialMood, moodAt, moodReduce, planProgress, planReduce } from '../lib/activity.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, parseSweepReply, shouldSweep } from '../lib/sweep.mjs'
 import { SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, doNowText, formatContext, reminderText } from '../lib/prompts.mjs'
 import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, repoName } from '../lib/repos.mjs'
 import { renderBand, renderPane } from '../lib/view.mjs'
-import { GIT_ENV, HASH_ARGS, REF, TREE_ARGS, blobArgs, commitArgs, firstLine, shaArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
+import { FETCH_ARGS, GIT_ENV, HASH_ARGS, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS, blobArgs, commitArgs, firstLine, hasOrigin, mergeItems, pushArgs, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
 
 const NO_GIT_NOTE = 'Esta sesión no está en un repo git: indica "repo" con la ruta del repo del cabo.'
 const NOT_A_REPO = 'La ruta no está dentro de un repo git: no se ha apuntado.'
@@ -35,6 +35,11 @@ let expanded = null
 let showOthers = false
 let showDone = false
 let refreshTimer = null
+// What the pane says once about the import of the 0.3 file; null when there is nothing to say.
+let notice = null
+// Where the session repo's ref stands against origin: 'local' (no origin), 'synced', 'ahead' or 'failed'.
+let sync = null
+const SYNC_QUESTION = '¿Subo también los cabos sueltos de este repo a origin? Viajan en refs/loose-ends, fuera de tus ramas.'
 
 async function projectRoot($) {
   return await $.session.root()
@@ -160,6 +165,104 @@ async function mutate($, fn, root, report) {
   const run = writeChain.then(() => mutateNow($, fn, root, report))
   writeChain = run.catch(() => {})
   return run
+}
+
+async function readSha($, root, ref) {
+  const r = await $.process.run(['git', '-C', root, ...shaArgs(ref)])
+  return r.exitCode === 0 ? firstLine(r.stdout) : null
+}
+
+async function hasRemote($, root) {
+  const r = await $.process.run(['git', '-C', root, ...REMOTE_ARGS])
+  return r.exitCode === 0 && hasOrigin(r.stdout)
+}
+
+// Where the ref stands against origin, from the local ref and the copy of origin's that the last fetch left.
+async function refreshSync($, root) {
+  if (!(await hasRemote($, root))) return 'local'
+  const mine = await readSha($, root, REF)
+  const theirs = await readSha($, root, REMOTE_REF)
+  return !mine || mine === theirs ? 'synced' : 'ahead'
+}
+
+// Brings origin's loose ends into the local ref. Answers the sha it fetched, the lease for a push; null when
+// there is no origin, origin has no ref yet, or the fetch failed.
+async function pullRemote($, root) {
+  if (!(await hasRemote($, root))) return null
+  const fetched = await $.process.run(['git', '-C', root, ...FETCH_ARGS], { timeoutMs: 20000 })
+  if (fetched.exitCode !== 0) return null
+  const theirs = await readRef($, root, REMOTE_REF)
+  if (!theirs.ok) return null
+  await mutate($, list => mergeItems(list, theirs.items), root)
+  return theirs.sha
+}
+
+// Merges origin first, then pushes the ref, refused if origin moved after the fetch.
+async function pushRemote($, root) {
+  if (!root) return
+  const lease = await pullRemote($, root)
+  const mine = await readSha($, root, REF)
+  if (!mine) return
+  const pushed = await $.process.run(['git', '-C', root, ...pushArgs(lease)], { timeoutMs: 30000 })
+  if (pushed.exitCode !== 0) {
+    if (root === sessionRepo) {
+      sync = 'failed'
+      $.ui.invalidate('ui.render')
+    }
+    await logDebug($, 'loose-ends: no se pudieron subir los cabos a origin')
+    return
+  }
+  await $.process.run(['git', '-C', root, ...trackArgs(mine)])
+  if (root === sessionRepo) {
+    sync = 'synced'
+    $.ui.invalidate('ui.render')
+  }
+}
+
+// After the person's own git push: pushes the ref too, asking the first time (Siempre and Nunca are remembered).
+async function afterUserPush($) {
+  const root = sessionRepo
+  if (!root) return
+  if ((await refreshSync($, root)) !== 'ahead') return
+  const pref = await $.process.run(['git', '-C', root, ...SYNC_GET_ARGS])
+  const mode = pref.exitCode === 0 ? firstLine(pref.stdout) : null
+  if (mode === 'false') return
+  if (mode !== 'true') {
+    const answer = await $.ui.ask(SYNC_QUESTION, { options: ['Siempre', 'Esta vez', 'Nunca'], header: 'Cabos' })
+    if (answer === 'Nunca') {
+      await $.process.run(['git', '-C', root, ...syncSetArgs(false)])
+      return
+    }
+    if (answer === 'Siempre') await $.process.run(['git', '-C', root, ...syncSetArgs(true)])
+    else if (answer !== 'Esta vez') return
+  }
+  await pushRemote($, root)
+}
+
+// Imports the items a 0.3 version left in <root>/.claude/loose-ends.json whose ids the ref lacks; the file stays.
+async function importLegacy($, root) {
+  const path = `${root}/${FILE}`
+  if (!(await $.fs.exists(path))) return
+  const parsed = parseFile(await $.fs.read(path))
+  if (!parsed.ok || !parsed.items.length) return
+  let added = 0
+  await mutate($, list => {
+    const known = new Set(list.map(i => i.id))
+    const fresh = parsed.items.filter(i => !known.has(i.id))
+    added = fresh.length
+    return fresh.length ? [...list, ...fresh] : list
+  }, root)
+  if (added && root === sessionRepo) notice = `Importados ${added} ${added === 1 ? 'cabo' : 'cabos'} de ${FILE}. Ya puedes borrar el fichero del repo.`
+}
+
+// At session start: the 0.3 file, then origin, then where the ref stands.
+async function startSync($, root) {
+  await importLegacy($, root)
+  await pullRemote($, root)
+  if (root === sessionRepo) {
+    sync = await refreshSync($, root)
+    $.ui.invalidate('ui.render')
+  }
 }
 
 async function toplevelOf($, dir) {
@@ -394,6 +497,9 @@ export function register(on) {
     await guarded($, 'resolver el repo de la sesión', () => refreshSessionRepo($))
     branch = await readBranch($)
     await load($)
+    notice = null
+    sync = null
+    if (sessionRepo) background($, startSync($, sessionRepo), 'traer los cabos de origin')
     mood = initialMood(await $.clock.now())
     plan = []
     commits = []
@@ -414,6 +520,7 @@ export function register(on) {
       const kind = classifyBash(e.command, bashFailed(r))
       if (kind) await feel($, { type: kind })
       if (kind === 'commit') commits = await readCommits($)
+      if (kind === 'push') background($, afterUserPush($), 'subir los cabos tras tu push')
     }
     return r
   })

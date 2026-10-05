@@ -169,6 +169,7 @@ test('a file path is resolved through its directory, once per directory', async 
   tools(on)
   turns(on)
   await w.start($)
+  await w.clock.settle()
   await startTurn($)
   const before = w.runs.length
   await $.tool.call({ tool: 'Edit', file_path: '/other/src/a.ts' })
@@ -182,6 +183,7 @@ test('subagent tool calls do not mark repos', async ($, on) => {
   const w = world(on, {}, { repos: REPOS })
   tools(on)
   await w.start($)
+  await w.clock.settle()
   const before = w.runs.length
   await $.tool.call({ tool: 'Edit', file_path: '/other/src/a.ts', agentId: 'sub1' })
   await w.clock.settle()

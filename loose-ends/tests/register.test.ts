@@ -121,6 +121,7 @@ test('starting a session twice does not stack the refresh timer', async ($, on) 
   const w = world(on)
   await w.start($)
   await w.start($)
+  await w.clock.settle()
   w.state.invalidations = 0
   await w.clock.advance(60000)
   expect(w.state.invalidations).toBe(1)

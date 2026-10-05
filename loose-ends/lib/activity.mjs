@@ -44,6 +44,7 @@ export function moodAt(s, now) {
 
 export function classifyBash(command, failed) {
   if (/\bgit\s+commit\b/.test(command)) return failed ? null : 'commit'
+  if (/\bgit\s+push\b/.test(command)) return failed ? null : 'push'
   if (/\bnpm\s+(run\s+)?test\b/.test(command) || /(?:^|[;&|])\s*(?:(?:npx|pnpm|yarn|bunx)\s+)?vitest(?![\w./-])/.test(command)) return failed ? 'test-fail' : null
   return null
 }

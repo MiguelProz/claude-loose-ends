@@ -70,6 +70,11 @@ describe('bash', () => {
     expect(classifyBash('npm run test -- foo', false)).toBe(null)
     expect(classifyBash('ls', true)).toBe(null)
   })
+  test('a successful git push is recognized, a failed one is not', () => {
+    expect(classifyBash('git push origin main', false)).toBe('push')
+    expect(classifyBash('git push', true)).toBe(null)
+    expect(classifyBash('git pushd', false)).toBe(null)
+  })
   test('vitest only counts as a command, not as a word in a path', () => {
     expect(classifyBash('cat vitest.config.ts', true)).toBe(null)
     expect(classifyBash('grep -r vitest package.json', true)).toBe(null)
