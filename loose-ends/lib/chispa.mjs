@@ -2,10 +2,10 @@ const C = 4
 const W = 24
 const H = 20
 const INK = '#2B2B2B'
-const PAL = { body: '#D97757', fail: '#C2413A', arm: '#B85F43', green: '#4ADE80', key: '#4B5058', bubble: '#F4F1EA', grey: '#9AA0A6', blue: '#8AA4FF', drop: '#7CC4F8', amber: '#F5C542' }
+const PAL = { body: '#D97757', fail: '#C2413A', arm: '#B85F43', green: '#4ADE80', key: '#4B5058', bubble: '#F4F1EA', grey: '#9AA0A6', blue: '#8AA4FF', drop: '#7CC4F8', amber: '#F5C542', card: '#FDCBB2', cardInk: '#6B2E14' }
 const CONFETTI = ['#E5484D', '#F5C542', '#4ADE80', '#60A5FA', '#D97757']
 
-export const MOODS = ['idle', 'coding', 'talking', 'thinking', 'sleeping', 'fail', 'celebrate', 'worried']
+export const MOODS = ['idle', 'coding', 'talking', 'thinking', 'sleeping', 'fail', 'celebrate', 'worried', 'note', 'working']
 
 export const MOOD_LABELS = {
   idle: 'Chispa esperando',
@@ -14,8 +14,10 @@ export const MOOD_LABELS = {
   thinking: 'Chispa pensando',
   sleeping: 'Chispa durmiendo',
   fail: 'Chispa con los tests en rojo',
-  celebrate: 'Chispa celebrando un commit',
-  worried: 'Chispa preocupada por un cabo suelto',
+  celebrate: 'Chispa celebrando',
+  worried: 'Chispa preocupada por un cabo urgente',
+  note: 'Chispa con una nota: hay cabos por revisar',
+  working: 'Chispa trabajando',
 }
 
 export const TERMINAL_FACES = {
@@ -27,7 +29,12 @@ export const TERMINAL_FACES = {
   fail: '(×_×);',
   celebrate: '\\(•ᴗ•)/',
   worried: '(•_•)!',
+  note: '(•ᴗ•)✎',
+  working: '(•̀ᴗ•́)⌨',
 }
+
+// Moods that borrow another mood's drawing.
+const POSE = { working: 'coding' }
 
 const cells = (...v) => v.map(n => n * C).join(';')
 const anim = (attr, values, dur, begin = 0) => `<animate attributeName="${attr}" values="${values}" dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/>`
@@ -71,6 +78,7 @@ function arms(mood) {
   return [4, 19]
     .map((x, k) => {
       if (mood === 'coding') return px(x, 10, 1, 2, PAL.arm, anim('y', cells(10, 11, 10), 0.2, k * 0.1))
+      if (mood === 'note') return px(x, 4, 1, 4, PAL.arm)
       if (mood === 'celebrate') return px(x, 6, 1, 2, PAL.arm)
       return px(x, 10, 1, 2, PAL.arm)
     })
@@ -99,11 +107,16 @@ function extras(mood) {
     return Array.from({ length: 12 }, (_, k) => px((k * 7 + 3) % W, 0, 1, 1, CONFETTI[k % 5], anim('y', cells(-1, H), 1.2 + (k % 3) * 0.3, k * 0.1))).join('')
   }
   if (mood === 'worried') return px(20, 1, 1, 3, PAL.amber, anim('opacity', '1;0.2;1', 0.6)) + px(20, 5, 1, 1, PAL.amber)
+  if (mood === 'note') {
+    const line = px(8, 1, 6, 1, PAL.cardInk, anim('width', cells(6, 4, 6), 2.4))
+    return px(7, 0, 10, 4, PAL.card) + line + px(8, 2, 4, 1, PAL.cardInk) + px(5, 3, 2, 1, PAL.arm) + px(17, 3, 2, 1, PAL.arm)
+  }
   return ''
 }
 
 export function chispaSvg(mood) {
-  const m = MOODS.includes(mood) ? mood : 'idle'
+  const known = MOODS.includes(mood) ? mood : 'idle'
+  const m = POSE[known] ?? known
   const color = m === 'fail' ? PAL.fail : PAL.body
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W * C} ${H * C}" width="${W * C}" height="${H * C}" shape-rendering="crispEdges" style="color-scheme:light dark;background:transparent"><g>${motion(m)}${body(color)}${arms(m)}${eyes(m)}${mouth(m)}</g>${extras(m)}</svg>`
 }
