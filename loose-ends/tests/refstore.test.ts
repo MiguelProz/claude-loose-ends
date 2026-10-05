@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { GIT_ENV, REMOTE_REF, ZERO, blobArgs, commitArgs, firstLine, hasOrigin, mergeItems, pushArgs, shaArgs, trackArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
+import { GIT_ENV, REMOTE_REF, ZERO, blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, mergeItems, pushArgs, shaArgs, trackArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
 
 const item = (id: string, over = {}) => ({ id, text: id, createdAt: '2026-10-04T09:00:00.000Z', ...over })
 
@@ -21,6 +21,9 @@ describe('refstore argv', () => {
     expect(pushArgs('r1')).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends:r1', 'origin', 'refs/loose-ends:refs/loose-ends'])
     expect(pushArgs(null)).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends:', 'origin', 'refs/loose-ends:refs/loose-ends'])
     expect(trackArgs('n1')).toEqual(['update-ref', 'refs/remotes/origin/loose-ends', 'n1'])
+  })
+  test('the commit of a turn is the last one made since the turn started', () => {
+    expect(lastCommitArgs('2026-10-04T10:00:00.000Z')).toEqual(['log', '-1', '--since=2026-10-04T10:00:00.000Z', '--format=%h'])
   })
   test('commit-tree runs with an identity of its own', () => {
     expect(GIT_ENV).toEqual({ GIT_AUTHOR_NAME: 'loose-ends', GIT_AUTHOR_EMAIL: 'loose-ends@localhost', GIT_COMMITTER_NAME: 'loose-ends', GIT_COMMITTER_EMAIL: 'loose-ends@localhost' })

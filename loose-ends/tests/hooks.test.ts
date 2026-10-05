@@ -79,17 +79,28 @@ test('the sweep proposes candidates and closures, and closes nothing by itself',
   expect(w.saved().find((i: any) => i.text === 'Comprimir la foto 3')).toMatchObject({ status: 'candidate', source: 'sweep', category: 'mejora' })
 })
 
-test('a commit made in the turn goes into the proposal', async ($, on) => {
+test('the last commit made since the turn started goes into the proposal, whatever the command was', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Tipar drafts')) }, head: 'a3f9c21' })
   on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"a1","quote":"${EVIDENCE_2}"}]}`))
-  on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false }, text: '' }))
   turns(on)
   await w.start($)
   await $.turn.start({ text: 'hola', turnId: 't' })
-  await $.tool.call({ tool: 'Bash', command: 'git commit -m "fix"' })
   await endTurn($)
   await w.clock.settle()
   expect(find(w, 'a1').proposal).toMatchObject({ quote: EVIDENCE_2, commit: 'a3f9c21' })
+  expect(w.runs.some(a => a.includes('--since=2026-10-04T10:00:00.000Z'))).toBe(true)
+})
+
+test('a turn without a commit leaves the proposal without one', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Tipar drafts')) }, head: 'a3f9c21', headAt: '2026-10-04T09:00:00.000Z' })
+  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"a1","quote":"${EVIDENCE_2}"}]}`))
+  turns(on)
+  await w.start($)
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  await endTurn($)
+  await w.clock.settle()
+  expect(find(w, 'a1').proposal.quote).toBe(EVIDENCE_2)
+  expect(find(w, 'a1').proposal.commit).toBeUndefined()
 })
 
 test('short answers bring no new items, but an item in progress is still checked', async ($, on) => {
@@ -126,6 +137,19 @@ test('only an answered turn is swept; a broken reply changes nothing', async ($,
   expect(calls).toBe(1)
   expect(w.saved()).toEqual([])
   expect(w.logs).toContain('loose-ends: barrido con JSON inválido')
+})
+
+test('the sweep logs why it could not file a candidate', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Tipar drafts')) } })
+  on('model.complete', () => {
+    w.setRef(ROOT, '{ roto')
+    return answered(`{"new":[{"text":"Comprimir la foto 3","category":"mejora","priority":"low","evidence":"${EVIDENCE}"}],"resolved":[]}`)
+  })
+  turns(on)
+  await w.start($)
+  await endTurn($)
+  await w.clock.settle()
+  expect(w.logs).toContain('loose-ends: no se pudo proponer en /proj (json)')
 })
 
 test('the sweep never touches an item the person closed meanwhile', async ($, on) => {
@@ -250,6 +274,46 @@ test('Sigue abierto clears the proposal', async ($, on) => {
   await msg.unmount()
 })
 
+test('the band Deshacer puts back what the close started from, and the card forgets its answer', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: withCandidate() } })
+  drawEngine(on)
+  await w.start($)
+  const msg = await message($, `Eso sí, ${EVIDENCE}.`)
+  await msg.press({ key: 'tri-save-c1' })
+  await w.clock.settle()
+  await msg.redraw()
+  expect(await msg.find({ key: 'tri-undo-c1' })).toBeDefined()
+  const ui = await pane($)
+  await ui.press({ key: 'done-c1' })
+  await w.clock.settle()
+  expect(find(w, 'c1').status).toBe('done')
+  await msg.redraw()
+  expect(await msg.find({ key: 'tri-undo-c1' })).toBeUndefined()
+  const term = await band($, 'terminal')
+  await term.press({ key: 'undo-close' })
+  await w.clock.settle()
+  expect(find(w, 'c1').status).toBe('open')
+  await term.unmount()
+  await ui.unmount()
+  await msg.unmount()
+})
+
+test('a card answer that changed nothing is not remembered', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: withCandidate() } })
+  drawEngine(on)
+  await w.start($)
+  const msg = await message($, `Eso sí, ${EVIDENCE}.`)
+  // another session saved the candidate meanwhile
+  w.setRef(ROOT, blob(it('c1', 'Comprimir la foto 3', { status: 'open', category: 'mejora', evidence: EVIDENCE }), it('a1', 'Tipar drafts')))
+  await msg.press({ key: 'tri-reject-c1' })
+  await w.clock.settle()
+  await msg.redraw()
+  expect(find(w, 'c1').status).toBe('open')
+  expect(w.writes).toEqual([])
+  expect(await msg.find({ type: 'Text', text: /Descartado/ })).toBeUndefined()
+  await msg.unmount()
+})
+
 test('pane: Guardar, Hacer starts the item and sends the prompt, Hecho closes it, ↺ reopens it', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: withCandidate() } })
   drawEngine(on)
@@ -327,6 +391,25 @@ test('pane: Subir pushes the ref when there are changes to push', async ($, on) 
   await ui.redraw()
   expect(w.pushes).toEqual([ROOT])
   expect(await ui.find({ type: 'Text', text: 'Al día con origin' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('pane: a write after Subir shows the changes as unpushed again', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Tipar drafts')) }, remote: { [ROOT]: '' } })
+  drawEngine(on)
+  await w.start($)
+  await w.clock.settle()
+  const ui = await pane($)
+  await ui.press({ key: 'push-now' })
+  await w.clock.settle()
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /Al d.a con origin/ })).toBeDefined()
+  expect(await ui.find({ key: 'push-now' })).toBeUndefined()
+  await ui.press({ key: 'prio-a1' })
+  await w.clock.settle()
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: 'Cambios sin subir' })).toBeDefined()
+  expect(await ui.find({ key: 'push-now' })).toBeDefined()
   await ui.unmount()
 })
 

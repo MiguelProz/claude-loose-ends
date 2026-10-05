@@ -23,7 +23,8 @@ export const trackArgs = sha => ['update-ref', REMOTE_REF, sha]
 export const SYNC_GET_ARGS = ['config', '--get', 'loose-ends.sync']
 export const syncSetArgs = on => ['config', 'loose-ends.sync', on ? 'true' : 'false']
 export const COMMON_DIR_ARGS = ['rev-parse', '--path-format=absolute', '--git-common-dir']
-export const LAST_COMMIT_ARGS = ['log', '-1', '--format=%h']
+// The last commit of HEAD made since `since` (an ISO timestamp); prints nothing when there is none.
+export const lastCommitArgs = since => ['log', '-1', `--since=${since}`, '--format=%h']
 
 // First line of a git answer, trimmed; null when there is none.
 export function firstLine(stdout) {

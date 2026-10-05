@@ -1,6 +1,6 @@
 import {
-  FETCH_ARGS, GIT_ENV, HASH_ARGS, LAST_COMMIT_ARGS, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS,
-  blobArgs, commitArgs, firstLine, hasOrigin, mergeItems, pushArgs, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
+  FETCH_ARGS, GIT_ENV, HASH_ARGS, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS,
+  blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, mergeItems, pushArgs, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
 } from '../lib/refstore.mjs'
 import {
   LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
@@ -45,8 +45,8 @@ let editing = null
 let notice = null
 // Where the session repo's ref stands against origin: 'local', 'synced', 'ahead' or 'failed'.
 let sync = null
-// A commit made during the current turn, the proof of what the sweep proposes to close.
-let turnCommit = null
+// When the current turn started (ISO); the commit the sweep offers as proof is the last one made since then.
+let turnStartedAt = null
 // Cards the person answered under a message: id -> { kind, quote, state, previous }.
 const triage = new Map()
 let refreshTimer = null
@@ -109,8 +109,8 @@ async function commitItems($, root, fn) {
     if (!read.ok) return { error: read.error }
     const result = fn(read.items)
     const nextItems = Array.isArray(result) ? result : result.items
-    if (serializeItems(nextItems) === serializeItems(read.items)) return { result, items: read.items }
-    if (await writeRef($, root, nextItems, read.sha)) return { result, items: nextItems }
+    if (serializeItems(nextItems) === serializeItems(read.items)) return { result, items: read.items, written: false }
+    if (await writeRef($, root, nextItems, read.sha)) return { result, items: nextItems, written: true }
   }
   return { error: 'busy' }
 }
@@ -155,6 +155,8 @@ async function mutateNow($, fn, root, report) {
   if (isSession) {
     fileError = null
     items = done.items
+    // a write moved the ref past what origin has
+    if (done.written && sync === 'synced') sync = 'ahead'
     if (editing && !items.some(i => i.id === editing)) editing = null
     $.ui.invalidate('ui.render')
   }
@@ -379,9 +381,10 @@ async function offer($, input, target) {
   return res?.added ? { added: res.added } : { reason: 'texto demasiado corto' }
 }
 
-async function lastCommit($) {
-  if (!sessionRepo) return null
-  const r = await $.process.run(['git', '-C', sessionRepo, ...LAST_COMMIT_ARGS])
+// The last commit of the session repo made since `since` (ISO), or null when there is none, no repo, or git fails.
+async function commitSince($, since) {
+  if (!sessionRepo || !since) return null
+  const r = await $.process.run(['git', '-C', sessionRepo, ...lastCommitArgs(since)])
   return r.exitCode === 0 ? firstLine(r.stdout) : null
 }
 
@@ -426,7 +429,9 @@ async function sweep($, answer, touchedNow, commit) {
   if (parsed.dropped) await logDebug($, `loose-ends: ${parsed.dropped} ${parsed.dropped === 1 ? 'propuesta descartada' : 'propuestas descartadas'} por cita no literal`)
   for (const { repo, ...fresh } of parsed.fresh) {
     const target = repo ?? sessionRepo
-    if (target) await offer($, { ...fresh, source: 'sweep' }, target)
+    if (!target) continue
+    const out = await offer($, { ...fresh, source: 'sweep' }, target)
+    if (out.error) await logDebug($, `loose-ends: no se pudo proponer en ${target} (${out.error})`)
   }
   if (parsed.resolved.length && sessionRepo) {
     const now = await nowIso($)
@@ -489,8 +494,14 @@ async function act($, id, change, state) {
   if (!before) return null
   lastActivity = await $.clock.now()
   const now = await nowIso($)
-  const res = await mutate($, list => change(list, id, now))
-  if (res === null) return null
+  // transitions keep the items they do not touch as the same objects, so a changed one is a different object
+  const res = await mutate($, list => {
+    const next = change(list, id, now)
+    return { items: next, changed: next.find(i => i.id === id) !== list.find(i => i.id === id) }
+  })
+  if (!res?.changed) return null
+  // a later action from the pane replaces the answer the card remembered
+  triage.delete(id)
   if (state) {
     const closing = state === 'closed' || state === 'kept'
     const quote = closing ? before.proposal?.quote : before.evidence
@@ -510,11 +521,22 @@ async function closeWith($, id, change, state) {
   $.clock.after(FLASH_MS + 50, () => $.ui.invalidate('ui.render'))
 }
 
+// The card's Deshacer: the item goes back to how it was before the person answered the card.
 async function undo($, id) {
-  const previous = triage.get(id)?.previous ?? (justClosed?.item.id === id ? justClosed.item : null)
+  const previous = triage.get(id)?.previous
   if (!previous) return
   triage.delete(id)
   if (justClosed?.item.id === id) justClosed = null
+  const now = await nowIso($)
+  await mutate($, list => restore(list, previous, now))
+}
+
+// The band's Deshacer: the item goes back to how it was before the last close, whatever happened to it since.
+async function undoClosed($) {
+  const previous = justClosed?.item
+  if (!previous) return
+  justClosed = null
+  triage.delete(previous.id)
   const now = await nowIso($)
   await mutate($, list => restore(list, previous, now))
 }
@@ -571,7 +593,7 @@ export function register(on) {
     triage.clear()
     working = false
     flashUntil = 0
-    turnCommit = null
+    turnStartedAt = null
     lastActivity = await $.clock.now()
     await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA })
     await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: cabos por revisar, abiertos y cerrados', immediate: true })
@@ -596,7 +618,6 @@ export function register(on) {
     if (e.tool === 'Bash' && typeof e.command === 'string') {
       const failed = bashFailed(r)
       if (isCommit(e.command, failed)) {
-        turnCommit = await lastCommit($)
         flashUntil = (await $.clock.now()) + FLASH_MS
         $.ui.invalidate('ui.render')
         $.clock.after(FLASH_MS + 50, () => $.ui.invalidate('ui.render'))
@@ -608,7 +629,7 @@ export function register(on) {
 
   on('turn.start', async ($, e, next) => {
     working = true
-    turnCommit = null
+    if (!e.agentId) turnStartedAt = await nowIso($)
     lastActivity = await $.clock.now()
     touched = new Set()
     for (const [dir, top] of repoCache) if (top === null) repoCache.delete(dir)
@@ -631,7 +652,11 @@ export function register(on) {
     if (e.reason === 'answer' && typeof e.answer === 'string' && e.answer.trim()) {
       if (shouldSweep(e.answer) || live(items).some(i => i.status === 'doing')) {
         const set = touched
-        background($, sweep($, e.answer, touchChain.then(() => [...set]), turnCommit), 'el barrido')
+        let commit = null
+        await guarded($, 'leer el commit del turno', async () => {
+          commit = await commitSince($, turnStartedAt)
+        })
+        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit), 'el barrido')
       }
     }
     return r
@@ -676,7 +701,7 @@ export function register(on) {
         background($, $.ui.open({ id: 'loose-ends', title: 'Cuaderno' }), 'abrir el cuaderno')
       },
       undoClose: () => {
-        if (justClosed) background($, undo($, justClosed.item.id), 'deshacer el cierre')
+        background($, undoClosed($), 'deshacer el cierre')
       },
     })
   })

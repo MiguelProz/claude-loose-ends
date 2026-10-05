@@ -11,6 +11,8 @@ type Opts = {
   log?: string
   // what `git log -1 --format=%h` answers
   head?: string
+  // when that commit was made (ISO): a `--since=` later than this finds no commit; without it HEAD always counts
+  headAt?: string
   startedAt?: number
   root?: string
   // directory prefix -> git toplevel; a directory under none of them is not in a repo (exit 128)
@@ -171,8 +173,12 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
         config[top] = args[2]
         return result(0, '')
       }
-      case 'log':
-        return args.includes('-1') ? result(0, `${opts.head ?? 'abc1234'}\n`) : result(0, opts.log ?? '')
+      case 'log': {
+        if (!args.includes('-1')) return result(0, opts.log ?? '')
+        const since = args.find(a => a.startsWith('--since='))
+        if (opts.headAt !== undefined && since !== undefined && Date.parse(since.slice('--since='.length)) > Date.parse(opts.headAt)) return result(0, '')
+        return result(0, `${opts.head ?? 'abc1234'}\n`)
+      }
       default:
         return result(0, opts.log ?? '')
     }
