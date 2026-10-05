@@ -8,7 +8,7 @@
     {
       "name": "loose-ends",
       "source": "./loose-ends",
-      "description": "Cuaderno de la sesión: plan, cabos sueltos que Claude menciona y no hace, y lo hecho, con Chispa, una mascota pixel art."
+      "description": "Propone los cabos sueltos que Claude deja sin hacer y tú decides cuáles se guardan, los guarda en refs/loose-ends sin ensuciar git, y Chispa avisa de lo que pide tu atención."
     }
   ]
 }

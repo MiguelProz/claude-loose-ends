@@ -15,29 +15,33 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   revises espera en el panel y caduca a los 7 días. Cada «No es un cabo» enseña
   al barrido: los últimos 20 van en su prompt.
 - **Cierre con prueba**: Haiku nunca cierra nada. Si una respuesta deja un cabo
-  hecho, propone «¿Resuelto?» con la frase que lo prueba y el commit del turno;
-  tú confirmas o dices «Sigue abierto». Tras `Hacer` mira la respuesta siempre,
-  sea larga o corta.
+  hecho, propone «¿Resuelto?» con la frase que lo prueba y, si el turno hizo
+  un commit, ese commit; tú confirmas o dices «Sigue abierto». Tras `Hacer`
+  mira la respuesta siempre, sea larga o corta.
 - **Dónde se guardan**: en la ref `refs/loose-ends` del repo git al que
   pertenece cada cabo, fuera de tus ramas. No ensucian `git status`, no hacen
   commits en tu rama y todos los worktrees del repo ven la misma lista. Con
-  `origin`, se traen al empezar la sesión y se suben tras tu `git push`: la
-  primera vez pregunta, y `Siempre` o `Nunca` quedan en
-  `git config loose-ends.sync`. Fuera de un repo git no se guarda nada (nunca
-  en `~/.claude/`).
+  `origin`, se traen al empezar la sesión y se suben tras un `git push` que
+  Claude ejecuta en la sesión: la primera vez pregunta, y `Siempre` o `Nunca`
+  quedan en `git config loose-ends.sync`. Si haces el push desde tu propia
+  terminal, el panel ofrece `Subir`. Fuera de un repo git no se guarda nada
+  (nunca en `~/.claude/`).
 - **Banda** encima del prompt: Chispa y una línea con una acción, la primera
-  que aplique: `N por revisar · Revisar`, `Urgente: … · Ver`,
-  `Cerrado: … · Deshacer`, `Desde ayer: … · Ver` o `N abiertos · Ver`.
+  que aplique: `No puedo leer los cabos · Ver`, `N por revisar · Revisar`,
+  `Urgente: … · Ver`, `Cerrado: … · Deshacer`, `Desde ayer: … · Ver` o
+  `N abiertos · Ver`.
 - **Chispa** lleva la señal: sostiene una nota si hay candidatos, se preocupa
-  con un urgente, celebra al cerrar, trabaja durante el turno y solo duerme
-  tras 30 minutos quieta y sin nada pendiente.
+  con un urgente, celebra al cerrar un cabo o tras un `git commit` con éxito,
+  trabaja durante el turno y solo duerme tras 30 minutos quieta y sin nada
+  pendiente.
 - **Panel** (`/pendientes` o la acción de la banda): Por revisar, Abiertos (la
   prioridad cambia con un toque, `editar`, `Hacer`, `Hecho`, `Descartar` y
   «¿Sigue vigente?» a los 14 días sin cambios) y Cerrados esta semana con `↺`.
   El campo de arriba apunta un cabo a mano. En móvil se ve igual, sin campos de
   texto.
 - **De paso**: si Claude lee o edita un fichero con cabos abiertos, se lo
-  recuerda. Con un urgente y el prompt vacío, lo propone en gris; `Tab` lo usa.
+  recuerda. Con un urgente abierto, sin candidatos por revisar y el prompt
+  vacío, lo propone en gris; `Tab` lo usa.
 
 Requiere Claude Code 2.1.287 o posterior (probado con 2.1.288).
 
