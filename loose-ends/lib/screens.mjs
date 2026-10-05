@@ -256,3 +256,14 @@ export function renderPane(el, surface, m, actions) {
   if (m.learned) out.push(el.Text({ dimColor: true, children: `El barrido aprende de ${plural(m.learned, 'descarte tuyo', 'descartes tuyos')}` }))
   return el.Box({ flexDirection: 'column', children: out })
 }
+
+// When the last session saw the repo, in words: «hace un rato» the same day, «ayer», or the date.
+export function sinceText(iso, now) {
+  const then = new Date(iso)
+  if (!Number.isFinite(then.getTime())) return 'la última vez'
+  const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const days = Math.round((day(new Date(now)) - day(then)) / (24 * 60 * 60 * 1000))
+  if (days <= 0) return 'hace un rato'
+  if (days === 1) return 'ayer'
+  return `el ${String(then.getDate()).padStart(2, '0')}/${String(then.getMonth() + 1).padStart(2, '0')}`
+}

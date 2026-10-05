@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { OPEN_PANE_HREF, UNDO_HREF, ago, bandLine, clip, emphasize, recapText, renderBand, renderPane, renderTriage } from '../lib/screens.mjs'
+import { OPEN_PANE_HREF, UNDO_HREF, ago, bandLine, clip, emphasize, recapText, renderBand, renderPane, renderTriage, sinceText } from '../lib/screens.mjs'
 
 const fake = new Proxy({}, { get: (_, type) => (props: any) => ({ type, props }) }) as any
 const flat = (node: any): any[] => [node, ...([] as any[]).concat(node?.props?.children ?? []).flatMap(c => (typeof c === 'object' ? flat(c) : []))]
@@ -240,5 +240,15 @@ describe('pane', () => {
     expect(ago('2026-10-04T07:00:00.000Z', NOW)).toBe('hace 3 h')
     expect(ago('2026-10-01T10:00:00.000Z', NOW)).toBe('hace 3 d')
     expect(ago('ayer', NOW)).toBe('')
+  })
+})
+
+describe('sinceText', () => {
+  const NOW = Date.parse('2026-10-04T10:00:00.000Z')
+  test('the same day, yesterday, or the date', () => {
+    expect(sinceText('2026-10-04T09:00:00.000Z', NOW)).toBe('hace un rato')
+    expect(sinceText('2026-10-03T10:00:00.000Z', NOW)).toBe('ayer')
+    expect(sinceText('2026-10-01T10:00:00.000Z', NOW)).toBe('el 01/10')
+    expect(sinceText('nunca', NOW)).toBe('la última vez')
   })
 })

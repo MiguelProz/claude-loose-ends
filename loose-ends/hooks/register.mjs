@@ -1,20 +1,20 @@
 import {
-  FETCH_ARGS, GIT_ENV, HASH_ARGS, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS,
+  COMMON_DIR_ARGS, FETCH_ARGS, GIT_ENV, HASH_ARGS, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS,
   blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, mergeItems, pushArgs, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
 } from '../lib/refstore.mjs'
 import {
   LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
-  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, topUrgent, touch,
+  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, topUrgent, touch, recap, snapshot,
 } from '../lib/items.mjs'
 import { rejectReason } from '../lib/filter.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
 import {
   NOT_A_REPO, NO_GIT_NOTE, SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, TOOL_TOO_SHORT,
-  doNowText, formatContext, toolProposed, toolRejected, toolUnreadable,
+  SUGGEST_PREFIX, doNowText, formatContext, passingText, suggestText, toolProposed, toolRejected, toolUnreadable,
 } from '../lib/texts.mjs'
 import { FLASH_MS, bashFailed, chispaMood, isCommit, isPush } from '../lib/mood.mjs'
 import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, relativeTo, repoName } from '../lib/repos.mjs'
-import { emphasize, renderBand, renderPane, renderTriage } from '../lib/screens.mjs'
+import { emphasize, renderBand, renderPane, renderTriage, sinceText } from '../lib/screens.mjs'
 
 const MAX_WALK = 3
 const MAX_CACHE = 500
@@ -50,6 +50,11 @@ let turnStartedAt = null
 // Cards the person answered under a message: id -> { kind, quote, state, previous }.
 const triage = new Map()
 let refreshTimer = null
+// «Desde …» for the band during the first turn: { since, fresh, closed }, or null.
+let recapNow = null
+// Files whose open loose ends Claude was already told about this turn, relative to the session repo.
+const passed = new Set()
+const SEEN_FILE = 'loose-ends-seen.json'
 
 async function logDebug($, message) {
   try {
@@ -358,6 +363,44 @@ async function startSync($, root) {
     sync = await refreshSync($, root)
     $.ui.invalidate('ui.render')
   })
+  if (root === sessionRepo) await guarded($, 'comparar con lo que vio la última sesión', () => recordSeen($, root, { compare: true }))
+}
+
+async function seenPath($, root) {
+  const r = await $.process.run(['git', '-C', root, ...COMMON_DIR_ARGS])
+  const dir = r.exitCode === 0 ? firstLine(r.stdout) : null
+  return dir ? `${normalizePath(dir)}/${SEEN_FILE}` : null
+}
+
+// Records what this session sees of the repo; with `compare`, first sets the band's «Desde …» against what the
+// last session saw.
+async function recordSeen($, root, { compare }) {
+  const path = await seenPath($, root)
+  if (!path) return
+  const now = await $.clock.now()
+  if (compare && (await $.fs.exists(path))) {
+    let seen = null
+    try {
+      seen = JSON.parse(await $.fs.read(path))
+    } catch {}
+    const r = recap(items, seen)
+    recapNow = r && (r.fresh || r.closed) ? { since: sinceText(r.at, now), fresh: r.fresh, closed: r.closed } : null
+    $.ui.invalidate('ui.render')
+  }
+  await $.fs.write(path, JSON.stringify(snapshot(items, new Date(now).toISOString())))
+}
+
+// The open loose ends anchored to the file a main-loop tool reads or edits, as a line for Claude; once per file
+// and turn, and only for the session repo, whose items live in memory.
+function passingFor(e) {
+  if (!sessionRepo || !FILE_TOOLS.has(e.tool)) return null
+  const path = e.tool === 'NotebookEdit' ? e.notebook_path : e.file_path
+  const rel = isAbsolutePath(path) ? relativeTo(sessionRepo, path) : undefined
+  if (!rel || passed.has(rel)) return null
+  const here = live(items).filter(i => i.file === rel)
+  if (!here.length) return null
+  passed.add(rel)
+  return passingText(here)
 }
 
 // Runs the filter and files a candidate in `target`. `reason` says why the filter refused it, `error` why the
@@ -446,7 +489,7 @@ function bandModel(now) {
     counts: c,
     urgent: topUrgent(items),
     justClosed: justClosed && now < justClosed.until ? justClosed : null,
-    recap: null,
+    recap: recapNow,
     fileError,
   }
 }
@@ -589,6 +632,8 @@ function itemActions($) {
 export function register(on) {
   on('session.start', async ($, e, next) => {
     editing = null
+    recapNow = null
+    passed.clear()
     justClosed = null
     triage.clear()
     working = false
@@ -624,6 +669,8 @@ export function register(on) {
       }
       if (isPush(e.command, failed)) background($, afterUserPush($), 'subir los cabos tras tu push')
     }
+    const passing = passingFor(e)
+    if (passing && r && !r.deny) return { ...r, context: [...(r.context ?? []), passing] }
     return r
   })
 
@@ -632,6 +679,12 @@ export function register(on) {
     if (!e.agentId) turnStartedAt = await nowIso($)
     lastActivity = await $.clock.now()
     touched = new Set()
+    passed.clear()
+    if (typeof e.text === 'string' && e.text.startsWith(SUGGEST_PREFIX)) {
+      const wanted = e.text.slice(SUGGEST_PREFIX.length).trim()
+      const item = live(items).find(i => i.text === wanted)
+      if (item) background($, act($, item.id, start), 'empezar el cabo sugerido')
+    }
     for (const [dir, top] of repoCache) if (top === null) repoCache.delete(dir)
     $.ui.invalidate('ui.render')
     return next(e)
@@ -641,6 +694,7 @@ export function register(on) {
     const r = await next(e)
     if (e.agentId) return r
     working = false
+    recapNow = null
     lastActivity = await $.clock.now()
     $.ui.invalidate('ui.render')
     await guarded($, 'resolver el repo de la sesión tras el turno', () => refreshSessionRepo($))
@@ -649,6 +703,9 @@ export function register(on) {
     })
     const now = await nowIso($)
     await guarded($, 'refrescar los cabos tras el turno', () => mutate($, list => expireCandidates(list, now)))
+    if (sessionRepo) await guarded($, 'apuntar lo visto del repo', () => recordSeen($, sessionRepo, { compare: false }))
+    const urgent = topUrgent(items)
+    if (urgent && !candidates(items).length) background($, $.prompt.suggest({ text: suggestText(urgent) }), 'sugerir el cabo urgente')
     if (e.reason === 'answer' && typeof e.answer === 'string' && e.answer.trim()) {
       if (shouldSweep(e.answer) || live(items).some(i => i.status === 'doing')) {
         const set = touched

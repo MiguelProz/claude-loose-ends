@@ -158,3 +158,21 @@ export function counts(items) {
 }
 
 export const topUrgent = items => live(items).find(i => i.priority === 'high') ?? null
+
+// What the repo looks like to a session: every id, and the ones still to do.
+export function snapshot(items, now) {
+  return { at: now, ids: items.map(i => i.id), live: items.filter(i => LIVE.has(i.status)).map(i => i.id) }
+}
+
+// What changed since `seen`: items it did not know that wait for the person or are to do, and items it saw to do
+// that are closed now. Null without a usable snapshot.
+export function recap(items, seen) {
+  if (!seen || !Array.isArray(seen.ids) || !Array.isArray(seen.live)) return null
+  const known = new Set(seen.ids)
+  const wasLive = new Set(seen.live)
+  return {
+    at: seen.at,
+    fresh: items.filter(i => !known.has(i.id) && (i.status === 'candidate' || LIVE.has(i.status))).length,
+    closed: items.filter(i => wasLive.has(i.id) && (i.status === 'done' || i.status === 'dismissed')).length,
+  }
+}

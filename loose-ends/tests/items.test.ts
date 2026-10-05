@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
   CATEGORIES, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
-  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, topUrgent, touch, upgrade,
+  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, topUrgent, touch, upgrade, snapshot, recap,
 } from '../lib/items.mjs'
 
 const T0 = '2026-10-04T10:00:00.000Z'
@@ -150,5 +150,22 @@ describe('queries', () => {
   })
   test('the categories', () => {
     expect(CATEGORIES).toEqual(['bug', 'deuda', 'test', 'aviso', 'mejora'])
+  })
+})
+
+describe('snapshot and recap', () => {
+  const T = '2026-10-04T10:00:00.000Z'
+  const mk = (id: string, status: string) => ({ id, text: id, status, priority: 'medium', createdAt: T })
+  test('snapshot keeps every id and the live ones', () => {
+    expect(snapshot([mk('a', 'open'), mk('b', 'doing'), mk('c', 'done'), mk('d', 'candidate')], T)).toEqual({ at: T, ids: ['a', 'b', 'c', 'd'], live: ['a', 'b'] })
+  })
+  test('recap counts what is new and waiting or to do, and what was live and is closed now', () => {
+    const seen = { at: '2026-10-03T10:00:00.000Z', ids: ['a', 'b', 'c'], live: ['a', 'b'] }
+    const now = [mk('a', 'open'), mk('b', 'done'), mk('c', 'dismissed'), mk('n', 'open'), mk('w', 'candidate'), mk('x', 'rejected')]
+    expect(recap(now, seen)).toEqual({ at: '2026-10-03T10:00:00.000Z', fresh: 2, closed: 1 })
+  })
+  test('without a usable snapshot there is no recap', () => {
+    expect(recap([], null)).toBe(null)
+    expect(recap([], { at: 'x' })).toBe(null)
   })
 })
