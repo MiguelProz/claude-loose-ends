@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { FILE_TOOLS, candidatePaths, isAbsolutePath, isIgnoredRepo, candidateRepos, formatCandidates, normalizePath, parentPath, repoName } from '../lib/repos.mjs'
+import { FILE_TOOLS, candidatePaths, isAbsolutePath, isIgnoredRepo, candidateRepos, formatCandidates, normalizePath, parentPath, repoName, relativeTo } from '../lib/repos.mjs'
 
 describe('candidatePaths: file tools', () => {
   test('Edit, Write, MultiEdit and Read use file_path', () => {
@@ -163,5 +163,24 @@ describe('Windows paths', () => {
   })
   test('POSIX escapes still work outside drive paths', () => {
     expect(candidatePaths('Bash', { command: 'cat /a/b\\ c/d.txt' })).toEqual(['/a/b c/d.txt'])
+  })
+})
+
+describe('relativeTo', () => {
+  test('an absolute path inside the repo becomes relative to its toplevel', () => {
+    expect(relativeTo('/proj', '/proj/lib/a.ts')).toBe('lib/a.ts')
+    expect(relativeTo('C:/Users/x/proj', 'c:\\Users\\x\\proj\\lib\\a.ts')).toBe('lib/a.ts')
+  })
+  test('outside the repo, the root itself, or nothing: undefined', () => {
+    expect(relativeTo('/proj', '/other/a.ts')).toBeUndefined()
+    expect(relativeTo('/proj', '/proj')).toBeUndefined()
+    expect(relativeTo('/proj', '/projx/a.ts')).toBeUndefined()
+    expect(relativeTo('/proj', '')).toBeUndefined()
+    expect(relativeTo('/proj', undefined as any)).toBeUndefined()
+  })
+  test('a relative path is already relative to the repo', () => {
+    expect(relativeTo('/proj', 'lib/a.ts')).toBe('lib/a.ts')
+    expect(relativeTo('/proj', './lib/a.ts')).toBe('lib/a.ts')
+    expect(relativeTo('/proj', 'lib\\a.ts')).toBe('lib/a.ts')
   })
 })

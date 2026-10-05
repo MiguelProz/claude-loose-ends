@@ -127,3 +127,13 @@ export function isIgnoredRepo(top, home) {
   const claude = segments.lastIndexOf('.claude')
   return claude !== -1 && (claude === segments.length - 1 || segments[claude + 1] === 'plugins')
 }
+
+// A path as the repo at `root` sees it: relative to its toplevel, with forward slashes. An absolute path outside
+// the repo, the toplevel itself or nothing gives undefined; a relative path is taken as relative to the repo.
+export function relativeTo(root, path) {
+  if (typeof path !== 'string' || !path.trim()) return undefined
+  const p = normalizePath(path.trim())
+  if (!isAbsolutePath(p)) return p.replace(/^(\.\/)+/, '') || undefined
+  const top = normalizePath(root)
+  return key(p).startsWith(`${key(top)}/`) ? p.slice(top.length + 1) : undefined
+}
