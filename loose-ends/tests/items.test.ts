@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
   CATEGORIES, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
-  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, topUrgent, touch, upgrade, snapshot, recap,
+  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap,
 } from '../lib/items.mjs'
 
 const T0 = '2026-10-04T10:00:00.000Z'
@@ -32,6 +32,12 @@ describe('parse and upgrade', () => {
     expect(JSON.parse(text).version).toBe(2)
     expect(text.endsWith('\n')).toBe(true)
     expect(parseItems(text)).toEqual({ ok: true, items })
+  })
+  test('a blob from a newer version is refused, so its states are never rewritten as open', () => {
+    expect(parseItems('{"version":3,"items":[{"id":"a1","text":"x","status":"snoozed"}]}')).toEqual({ ok: false, error: 'version' })
+    expect(parseItems('{"version":2,"items":[]}')).toEqual({ ok: true, items: [] })
+    expect(parseItems('{"version":1,"items":[]}')).toEqual({ ok: true, items: [] })
+    expect(parseItems('{"items":[]}')).toEqual({ ok: true, items: [] })
   })
 })
 
@@ -135,6 +141,18 @@ describe('queries', () => {
     expect(counts(items)).toEqual({ candidates: 2, live: 3, high: 1 })
     expect(topUrgent(items)?.id).toBe('h1')
     expect(topUrgent([])).toBe(null)
+  })
+  test('the prompt suggests only an urgent item still open, without a proposed closure, and only while no candidate waits', () => {
+    const urgent = (over = {}) => save(propose([], input({ id: 'h1', text: 'Urgente', priority: 'high', ...over })).items, 'h1', T0)
+    expect(suggestable(urgent())?.id).toBe('h1')
+    expect(suggestable(start(urgent(), 'h1', T1))).toBe(null)
+    expect(suggestable(proposeClose(urgent(), 'h1', { quote: 'ya está hecho' }, T1))).toBe(null)
+    expect(suggestable(save(propose([], input({ id: 'm1' })).items, 'm1', T0))).toBe(null)
+    expect(suggestable(build())).toBe(null)
+    expect(suggestable([])).toBe(null)
+    // a doing urgent item does not hide an open one behind it
+    const two = save(propose(start(urgent(), 'h1', T1), input({ id: 'h2', text: 'Otro urgente', priority: 'high', now: T1 })).items, 'h2', T1)
+    expect(suggestable(two)?.id).toBe('h2')
   })
   test('closed in the last 7 days, newest first; rejected texts newest first', () => {
     const items = build()

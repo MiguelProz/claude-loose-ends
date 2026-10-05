@@ -1,5 +1,5 @@
 import { mock } from 'claude-code/testing'
-import { REF, REMOTE_REF, ZERO } from '../lib/refstore.mjs'
+import { REF } from '../lib/refstore.mjs'
 
 export const ROOT = '/proj'
 // The file a 0.3 version kept in the working tree; only the import reads it.
@@ -25,9 +25,9 @@ type Opts = {
   home?: string | null
   // %USERPROFILE%, for when HOME is unset (Windows)
   userProfile?: string
-  // git toplevel -> the blob text its refs/loose-ends holds
+  // git toplevel -> the blob text its data ref holds
   refs?: Record<string, string>
-  // git toplevel -> origin's refs/loose-ends blob text ('' for an origin without the ref); toplevels not listed have no origin
+  // git toplevel -> origin's data ref blob text ('' for an origin without the ref); toplevels not listed have no origin
   remote?: Record<string, string>
   // git toplevel -> git config loose-ends.sync
   sync?: Record<string, string>
@@ -44,15 +44,17 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   const runs: string[][] = []
   const logs: string[] = []
   const toasts: string[] = []
-  // toplevels whose refs/loose-ends moved, in order
+  // toplevels whose data ref moved, in order
   const writes: string[] = []
-  // toplevels whose refs/loose-ends was read
+  // toplevels whose data ref was read
   const gitReads: string[] = []
   const reads: string[] = []
   const pushes: string[] = []
   const fetches: string[] = []
   // the environment each commit-tree ran with
   const envs: any[] = []
+  // the environment each fetch and push ran with
+  const netEnvs: any[] = []
   const commands: any[] = []
   const state = { invalidations: 0 }
   const fs: Record<string, string> = { ...files }
@@ -75,11 +77,11 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   const refsOf: Record<string, Record<string, string>> = {}
   const git = (top: string) => (refsOf[top] ??= {})
   for (const [top, text] of Object.entries(opts.refs ?? {})) git(top)[REF] = commitOf(text)
-  // toplevel -> sha of origin's refs/loose-ends (null: origin exists without it)
+  // toplevel -> sha of origin's data ref (null: origin exists without it)
   const remotes: Record<string, string | null> = {}
   for (const [top, text] of Object.entries(opts.remote ?? {})) remotes[top] = text === '' ? null : commitOf(text)
   const config: Record<string, string> = { ...(opts.sync ?? {}) }
-  // another session moving refs/loose-ends right before the next update-ref (`times` updates in a row)
+  // another session moving the data ref right before the next update-ref (`times` updates in a row)
   const races: Record<string, { text: string; times: number }> = {}
   // another machine pushing to origin right before the next push
   const remoteRaces: Record<string, string> = {}
@@ -142,7 +144,8 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
           refs[REF] = commitOf(race.text)
           if (--race.times === 0) delete races[top]
         }
-        if ((refs[ref] ?? ZERO) !== prev) return result(1, '')
+        // like real git, an empty old value means the ref must not exist yet
+        if ((refs[ref] ?? '') !== prev) return result(1, '')
         refs[ref] = next
         writes.push(top)
         return result(0, '')
@@ -150,13 +153,22 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
       case 'remote':
         return result(0, top in remotes ? 'origin\n' : '')
       case 'fetch': {
-        if (!(top in remotes) || remotes[top] === null) return result(128, '')
+        netEnvs.push(e.init?.env)
+        // origin holds only the data ref: `+<src>:<dst>`
+        const [src, dst] = String(args.at(-1)).replace(/^\+/, '').split(':')
+        if (!(top in remotes) || remotes[top] === null || src !== REF) return result(128, '')
         fetches.push(top)
-        refs[REMOTE_REF] = remotes[top] as string
+        refs[dst] = remotes[top] as string
         return result(0, '')
       }
       case 'push': {
+        netEnvs.push(e.init?.env)
         if (!(top in remotes)) return result(128, '')
+        const [src, dst] = String(args.at(-1)).split(':')
+        // like real git's receive-pack: a ref with one component under refs/ is a "funny refname"
+        if (/^refs\/[^/]+$/.test(dst)) return result(1, '')
+        const sha = /^[0-9a-f]{40}$/.test(src) ? src : refs[src]
+        if (!sha) return result(1, '')
         if (remoteRaces[top] !== undefined) {
           remotes[top] = commitOf(remoteRaces[top])
           delete remoteRaces[top]
@@ -164,7 +176,7 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
         const lease = args.find(a => a.startsWith('--force-with-lease='))
         const expect = lease === undefined ? undefined : lease.slice(lease.indexOf(':') + 1)
         if (expect !== undefined && (remotes[top] ?? '') !== expect) return result(1, '')
-        remotes[top] = refs[REF]
+        remotes[top] = sha
         pushes.push(top)
         return result(0, '')
       }
@@ -198,7 +210,12 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   const race = (top: string, text: string, times = 1) => { races[top] = { text, times } }
   const remoteRace = (top: string, text: string) => { remoteRaces[top] = text }
   const remoteText = (top: string) => blobOf(remotes[top])
+  // origin's data ref changed by another machine
+  const setRemote = (top: string, text: string) => { remotes[top] = text === '' ? null : commitOf(text) }
+  // the commits the local and origin's data refs point at
+  const refSha = (top: string) => refsOf[top]?.[REF]
+  const remoteSha = (top: string) => remotes[top]
   const setBranch = (b: string) => { branch = b }
   const setRoot = (r: string) => { root = r }
-  return { fs, clock, start, saved, savedAt, refText, setRef, race, remoteRace, remoteText, setBranch, setRoot, flags, runs, logs, toasts, writes, gitReads, reads, pushes, fetches, envs, config, commands, state }
+  return { fs, clock, start, saved, savedAt, refText, setRef, race, remoteRace, remoteText, setRemote, refSha, remoteSha, setBranch, setRoot, flags, runs, logs, toasts, writes, gitReads, reads, pushes, fetches, envs, netEnvs, config, commands, state }
 }

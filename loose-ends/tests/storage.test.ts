@@ -15,11 +15,11 @@ test('a note lands in refs/loose-ends and never in the working tree', async ($, 
   expect(Object.keys(w.fs).filter(k => !k.includes('/.git/'))).toEqual([])
 })
 
-test('the first write creates the ref and commit-tree runs with its own identity', async ($, on) => {
+test('the first write creates the ref, guarded by an empty old value, and commit-tree runs with its own identity', async ($, on) => {
   const w = world(on)
   await w.start($)
   await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Primer cabo de la ref', priority: 'low' })
-  expect(w.runs.find(a => a.includes('update-ref'))?.at(-1)).toBe('0'.repeat(40))
+  expect(w.runs.find(a => a.includes('update-ref'))?.slice(3)).toEqual(['update-ref', 'refs/loose-ends/items', expect.stringMatching(/^[0-9a-f]{40}$/), ''])
   expect(w.envs[0]).toMatchObject({ GIT_AUTHOR_NAME: 'loose-ends' })
 })
 
@@ -38,6 +38,15 @@ test('after three lost races the note gives up and says so', async ($, on) => {
   const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo que no entra', priority: 'low' })
   expect(String(r.result)).toContain('(busy)')
   expect(w.saved().map((i: any) => i.text)).toEqual(['Cabo de otra sesión'])
+})
+
+test('when git cannot write the object, the note answers why instead of throwing', async ($, on) => {
+  const w = world(on)
+  await w.start($)
+  w.flags.failWrites = true
+  const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo que git no escribe', priority: 'low' })
+  expect(r.result).toBe('No se pudo proponer: los cabos de /proj (refs/loose-ends) no se pueden leer (git hash-object falló).')
+  expect(w.writes).toEqual([])
 })
 
 test('an unreadable blob is never overwritten', async ($, on) => {

@@ -18,6 +18,8 @@ const tools = (on: any, { answer = 'Siempre', pushFails = false } = {}) => {
   return asked
 }
 const push = ($: any) => $.tool.call({ tool: 'Bash', command: 'git push origin main' })
+const PANE = { component: 'Pane', requestId: 'loose-ends', props: { title: 'Cuaderno', isFocused: true, bodyColumns: 60, placement: 'dock' } as any }
+const pane = ($: any) => $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...PANE })
 
 test('the 0.3 file is imported once into the ref and left where it was', async ($, on) => {
   const legacy = blob(item('a1', 'Cabo antiguo'))
@@ -53,6 +55,101 @@ test('at start origin loose ends are merged into the local ref', async ($, on) =
   await w.clock.settle()
   expect(w.fetches).toEqual([ROOT])
   expect(w.saved().map((i: any) => i.text)).toEqual(['Local', 'De otro ordenador'])
+})
+
+test('a fresh clone takes origin commit as it is and reads Al día con origin', async ($, on) => {
+  const w = world(on, {}, { remote: { [ROOT]: blob(item('o1', 'De otro ordenador')) } })
+  await w.start($)
+  await w.clock.settle()
+  expect(w.saved().map((i: any) => i.text)).toEqual(['De otro ordenador'])
+  expect(w.refSha(ROOT)).toBe(w.remoteSha(ROOT))
+  const ui = await pane($)
+  expect(await ui.find({ type: 'Text', text: 'Al día con origin' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the same items under different commits converge on origin commit, and nothing is pushed', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Compartido')) }, remote: { [ROOT]: blob(item('a1', 'Compartido')) }, sync: { [ROOT]: 'true' } })
+  tools(on)
+  await w.start($)
+  await w.clock.settle()
+  expect(w.refSha(ROOT)).toBe(w.remoteSha(ROOT))
+  const ui = await pane($)
+  expect(await ui.find({ type: 'Text', text: 'Al día con origin' })).toBeDefined()
+  await ui.unmount()
+  await push($)
+  await w.clock.settle()
+  expect(w.pushes).toEqual([])
+})
+
+test('the same items in another order also converge, so two machines never push in turns', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('b2', 'De aquí'), item('a1', 'De allí')) }, remote: { [ROOT]: blob(item('a1', 'De allí'), item('b2', 'De aquí')) } })
+  await w.start($)
+  await w.clock.settle()
+  expect(w.refSha(ROOT)).toBe(w.remoteSha(ROOT))
+})
+
+test('local items origin lacks are merged into a new commit that Subir pushes and tracks', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) }, remote: { [ROOT]: blob(item('o1', 'Remoto')) } })
+  await w.start($)
+  await w.clock.settle()
+  const ui = await pane($)
+  expect(await ui.find({ type: 'Text', text: 'Cambios sin subir' })).toBeDefined()
+  await ui.press({ key: 'push-now' })
+  await w.clock.settle()
+  await ui.redraw()
+  expect(w.pushes).toEqual([ROOT])
+  expect(w.remoteSha(ROOT)).toBe(w.refSha(ROOT))
+  expect(await ui.find({ type: 'Text', text: 'Al día con origin' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('fetch and push run without a credential prompt', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) }, remote: { [ROOT]: blob(item('o1', 'Remoto')) } })
+  await w.start($)
+  await w.clock.settle()
+  const ui = await pane($)
+  await ui.press({ key: 'push-now' })
+  await w.clock.settle()
+  await ui.unmount()
+  expect(w.netEnvs.length).toBeGreaterThan(1)
+  for (const env of w.netEnvs) expect(env).toMatchObject({ GIT_TERMINAL_PROMPT: '0' })
+})
+
+test('an unreadable local blob is never pushed over origin', async ($, on) => {
+  const good = blob(item('o1', 'Remoto bueno'))
+  const w = world(on, {}, { refs: { [ROOT]: '{ roto' }, remote: { [ROOT]: good }, sync: { [ROOT]: 'true' } })
+  tools(on)
+  await w.start($)
+  await w.clock.settle()
+  await push($)
+  await w.clock.settle()
+  expect(w.pushes).toEqual([])
+  expect(w.remoteText(ROOT)).toBe(good)
+  expect(w.logs.some(l => l.includes('no se suben los cabos'))).toBe(true)
+  const ui = await pane($)
+  await ui.press({ key: 'push-now' })
+  await w.clock.settle()
+  await ui.redraw()
+  expect(w.pushes).toEqual([])
+  expect(w.remoteText(ROOT)).toBe(good)
+  expect(await ui.find({ type: 'Text', text: 'No se pudieron subir a origin' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a merge that loses three races to other sessions pushes nothing', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) }, remote: { [ROOT]: blob(item('o1', 'Remoto')) }, sync: { [ROOT]: 'true' } })
+  tools(on)
+  await w.start($)
+  await w.clock.settle()
+  const theirs = blob(item('o1', 'Remoto'), item('o2', 'Nuevo en origin'))
+  w.setRemote(ROOT, theirs)
+  w.race(ROOT, blob(item('b2', 'De otra sesión')), 3)
+  await push($)
+  await w.clock.settle()
+  expect(w.pushes).toEqual([])
+  expect(w.remoteText(ROOT)).toBe(theirs)
+  expect(w.logs.some(l => l.includes('no se suben los cabos'))).toBe(true)
 })
 
 test('a failed fetch at start leaves a line in the debug log', async ($, on) => {

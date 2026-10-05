@@ -11,19 +11,25 @@ const turns = (on: any) => {
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
 }
 const endTurn = ($: any, turnId = 't') => $.turn.complete({ answer: 'corto', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
-const suggestions = (on: any) => {
+// the box beneath the plugins: what reaches it is what the person would see
+const suggestions = (on: any, isShown = true) => {
   const said: string[] = []
-  on('prompt.suggest', ($: any, e: any) => { said.push(e.text); return { isShown: true } })
+  on('prompt.suggest', ($: any, e: any) => { said.push(e.text); return { isShown } })
   return said
 }
+// the engine's own guess after a turn
+const engineGuess = ($: any, text = 'Ejecuta los tests') => $.prompt.suggest({ text, origin: { kind: 'suggestion' } })
 
-test('after a turn the urgent item is proposed in the empty prompt', async ($, on) => {
+test('once the turn has ended the urgent item is proposed in the empty prompt', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el login', { priority: 'high' }), it('b2', 'Otro')) } })
   const said = suggestions(on)
   turns(on)
   await w.start($)
   await endTurn($)
   await w.clock.settle()
+  // not from inside turn.complete, where the box shows nothing while the turn runs
+  expect(said).toEqual([])
+  await w.clock.advance(500)
   expect(said).toEqual(['Resuelve el cabo: Arreglar el login'])
 })
 
@@ -33,11 +39,49 @@ test('no suggestion without an urgent item, nor while candidates wait', async ($
   turns(on)
   await w.start($)
   await endTurn($)
-  await w.clock.settle()
+  await w.clock.advance(500)
   w.setRef(ROOT, blob(it('a1', 'Arreglar el login', { priority: 'high' }), it('c1', 'Candidato', { status: 'candidate' })))
   await endTurn($, 't2')
-  await w.clock.settle()
+  await w.clock.advance(500)
   expect(said).toEqual([])
+})
+
+test('an urgent item already in progress, or with a closure waiting, is not suggested', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el login', { priority: 'high', status: 'doing' })) } })
+  const said = suggestions(on)
+  turns(on)
+  await w.start($)
+  await endTurn($)
+  await w.clock.advance(500)
+  w.setRef(ROOT, blob(it('a1', 'Arreglar el login', { priority: 'high', proposal: { quote: 'ya está', at: T0 } })))
+  await endTurn($, 't2')
+  await w.clock.advance(500)
+  expect(said).toEqual([])
+  await engineGuess($)
+  expect(said).toEqual(['Ejecuta los tests'])
+})
+
+test('the engine guess is replaced by the urgent item while one can be suggested, and left alone otherwise', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el login', { priority: 'high' })) } })
+  const said = suggestions(on)
+  await w.start($)
+  await engineGuess($)
+  // another plugin's suggestion is its own business
+  await $.prompt.suggest({ text: 'Revisa el PR', origin: { kind: 'plugin', name: 'otro' } })
+  w.setRef(ROOT, blob(it('a1', 'Arreglar el login', { priority: 'high' }), it('c1', 'Candidato', { status: 'candidate' })))
+  await w.start($)
+  await engineGuess($)
+  expect(said).toEqual(['Resuelve el cabo: Arreglar el login', 'Revisa el PR', 'Ejecuta los tests'])
+})
+
+test('a suggestion the box did not show leaves a line in the debug log', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el login', { priority: 'high' })) } })
+  suggestions(on, false)
+  turns(on)
+  await w.start($)
+  await endTurn($)
+  await w.clock.advance(500)
+  expect(w.logs.some(l => l.includes('sugerencia') && l.includes('no se mostró'))).toBe(true)
 })
 
 test('a prompt that takes the suggestion starts the item', async ($, on) => {
@@ -140,6 +184,19 @@ test('an unreadable ref never overwrites what the last session saw', async ($, o
   await endTurn($)
   await w.clock.settle()
   expect(w.fs[SEEN]).toBe(seen)
+})
+
+test('an errored tool call gets no loose ends and does not use up the file for the turn', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el envío duplicado', { file: 'lib/facturas.ts' })) } })
+  let calls = 0
+  on('tool.call', () => (++calls === 1 ? { isError: true, result: 'x', text: 'File does not exist.' } : { result: {} }))
+  turns(on)
+  await w.start($)
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  const failed = await $.tool.call({ tool: 'Read', file_path: '/proj/lib/facturas.ts' })
+  expect(failed.context).toBeUndefined()
+  const read = await $.tool.call({ tool: 'Read', file_path: '/proj/lib/facturas.ts' })
+  expect(read.context).toEqual(['Cabos abiertos en este fichero: Arreglar el envío duplicado (a1).'])
 })
 
 test('a denied tool call does not use up the file for the turn', async ($, on) => {

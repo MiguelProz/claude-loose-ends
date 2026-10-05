@@ -1,10 +1,10 @@
 import {
-  COMMON_DIR_ARGS, FETCH_ARGS, GIT_ENV, HASH_ARGS, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS,
-  blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, mergeItems, pushArgs, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
+  COMMON_DIR_ARGS, FETCH_ARGS, GIT_ENV, HASH_ARGS, NET_ENV, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS,
+  blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, mergeItems, pushArgs, sameItems, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
 } from '../lib/refstore.mjs'
 import {
   LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
-  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, topUrgent, touch, recap, snapshot,
+  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
 } from '../lib/items.mjs'
 import { rejectReason } from '../lib/filter.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
@@ -162,15 +162,20 @@ async function mutateNow($, fn, root, report) {
     return null
   }
   if (isSession) {
-    fileError = null
-    items = done.items
     // a write moved the ref past what origin has
     if (done.written && sync === 'synced') sync = 'ahead'
-    if (done.written && seenReady) background($, recordSeen($, target, { compare: false }), 'apuntar lo visto del repo')
-    if (editing && !items.some(i => i.id === editing)) editing = null
-    $.ui.invalidate('ui.render')
+    adopt($, done.items, done.written)
   }
   return done.result
+}
+
+// The session repo's items, as its ref holds them after a write or a move; `moved` says whether the ref changed.
+function adopt($, list, moved) {
+  fileError = null
+  items = list
+  if (moved && seenReady) background($, recordSeen($, sessionRepo, { compare: false }), 'apuntar lo visto del repo')
+  if (editing && !items.some(i => i.id === editing)) editing = null
+  $.ui.invalidate('ui.render')
 }
 
 async function mutate($, fn, root, report) {
@@ -287,39 +292,81 @@ async function refreshSync($, root) {
   return !mine || mine === theirs ? 'synced' : 'ahead'
 }
 
-// Brings origin's loose ends into the local ref. Answers the sha it fetched, the lease for a push; null when
-// there is no origin, origin has no ref yet, or the fetch failed.
-async function pullRemote($, root) {
-  if (!(await hasRemote($, root))) return null
-  const fetched = await $.process.run(['git', '-C', root, ...FETCH_ARGS], { timeoutMs: 20000 })
-  if (fetched.exitCode !== 0) {
-    await logDebug($, 'loose-ends: no se pudieron traer los cabos de origin')
-    return null
+// On the write chain: brings origin's items (`theirs`, read from its copy) into the local ref. When the local ref
+// holds nothing origin lacks, it moves to origin's commit, so both sides end on the same commit and read «Al día»;
+// otherwise, or when another session moved it in between, the merge is written as a new commit.
+// Answers whether the local ref now holds origin's items.
+async function mergeRemoteNow($, root, theirs) {
+  const local = await readRef($, root)
+  if (local.ok && theirs.sha && sameItems(mergeItems(local.items, theirs.items), theirs.items)) {
+    if (local.sha === theirs.sha) return true
+    const moved = await $.process.run(['git', '-C', root, ...updateArgs(theirs.sha, local.sha)])
+    if (moved.exitCode === 0) {
+      if (root === sessionRepo) adopt($, theirs.items, true)
+      return true
+    }
   }
-  const theirs = await readRef($, root, REMOTE_REF)
-  if (!theirs.ok) return null
-  await mutate($, list => mergeItems(list, theirs.items), root)
-  return theirs.sha
+  const report = {}
+  await mutateNow($, list => mergeItems(list, theirs.items), root, report)
+  return !report.error
 }
 
-// Merges origin first, then pushes the ref, refused if origin moved after the fetch.
+// Brings origin's loose ends into the local ref. Answers null without origin; otherwise whether the merge went well
+// (`ok`) and the sha fetched (`lease`, for a push), null when origin has no ref yet or the fetch failed.
+async function pullRemote($, root) {
+  if (!(await hasRemote($, root))) return null
+  const fetched = await $.process.run(['git', '-C', root, ...FETCH_ARGS], { timeoutMs: 20000, env: NET_ENV })
+  if (fetched.exitCode !== 0) {
+    await logDebug($, 'loose-ends: no se pudieron traer los cabos de origin')
+    return { ok: true, lease: null }
+  }
+  const theirs = await readRef($, root, REMOTE_REF)
+  if (!theirs.ok) {
+    await logDebug($, `loose-ends: los cabos de origin no se pueden leer (${theirs.error})`)
+    return { ok: false, lease: null }
+  }
+  const run = writeChain.then(() => mergeRemoteNow($, root, theirs))
+  writeChain = run.catch(() => {})
+  let ok = false
+  try {
+    ok = await run
+  } catch (err) {
+    await logDebug($, `loose-ends: fusionar los cabos de origin falló (${err?.message ?? err})`)
+  }
+  return { ok, lease: theirs.sha }
+}
+
+// Merges origin first, then pushes the commit the local ref holds, refused if origin moved after the fetch. A merge
+// that failed pushes nothing: the local ref may lack what origin has.
 async function pushRemote($, root) {
   if (!root) return
-  const lease = await pullRemote($, root)
-  const mine = await readSha($, root, REF)
-  if (!mine) return
-  const pushed = await $.process.run(['git', '-C', root, ...pushArgs(lease)], { timeoutMs: 30000 })
-  if (pushed.exitCode !== 0) {
+  const pulled = await pullRemote($, root)
+  if (pulled && !pulled.ok) {
     if (root === sessionRepo) {
       sync = 'failed'
       $.ui.invalidate('ui.render')
     }
-    await logDebug($, 'loose-ends: no se pudieron subir los cabos a origin')
+    await logDebug($, 'loose-ends: no se suben los cabos porque no se pudieron fusionar con los de origin')
     return
   }
-  await $.process.run(['git', '-C', root, ...trackArgs(mine)])
+  const lease = pulled?.lease ?? null
+  const mine = await readSha($, root, REF)
+  if (!mine) return
+  if (mine !== lease) {
+    const pushed = await $.process.run(['git', '-C', root, ...pushArgs(lease, mine)], { timeoutMs: 30000, env: NET_ENV })
+    if (pushed.exitCode !== 0) {
+      if (root === sessionRepo) {
+        sync = 'failed'
+        $.ui.invalidate('ui.render')
+      }
+      await logDebug($, 'loose-ends: no se pudieron subir los cabos a origin')
+      return
+    }
+    await $.process.run(['git', '-C', root, ...trackArgs(mine)])
+  }
   if (root === sessionRepo) {
-    sync = 'synced'
+    // a write that landed after `mine` was read is still to push
+    sync = await refreshSync($, root)
     $.ui.invalidate('ui.render')
   }
 }
@@ -481,12 +528,21 @@ async function sweep($, answer, touchedNow, commit) {
   for (const { repo, ...fresh } of parsed.fresh) {
     const target = repo ?? sessionRepo
     if (!target) continue
-    const out = await offer($, { ...fresh, source: 'sweep' }, target)
-    if (out.error) await logDebug($, `loose-ends: no se pudo proponer en ${target} (${out.error})`)
+    await guarded($, `proponer en ${target}`, async () => {
+      const out = await offer($, { ...fresh, source: 'sweep' }, target)
+      if (out.error) await logDebug($, `loose-ends: no se pudo proponer en ${target} (${out.error})`)
+    })
   }
   if (parsed.resolved.length && sessionRepo) {
     const now = await nowIso($)
-    await mutate($, list => parsed.resolved.reduce((acc, r) => proposeClose(acc, r.id, { quote: r.quote, commit }, now), list))
+    await guarded($, 'proponer los cierres', async () => {
+      const res = await mutate($, list => {
+        const next = parsed.resolved.reduce((acc, r) => proposeClose(acc, r.id, { quote: r.quote, commit }, now), list)
+        return { items: next, proposed: parsed.resolved.map(r => r.id).filter(id => next.find(i => i.id === id) !== list.find(i => i.id === id)) }
+      })
+      // a card's Deshacer would put back the item without the closure just proposed
+      for (const id of res?.proposed ?? []) triage.delete(id)
+    })
   }
 }
 
@@ -599,7 +655,17 @@ async function doNow($, id) {
   const now = await nowIso($)
   const res = await mutate($, list => start(list, id, now))
   if (res === null) return
+  // a card's Deshacer would put back the item as it was before Hacer
+  triage.delete(id)
   await $.prompt.submit({ text: doNowText(item) })
+}
+
+// The urgent item as the prompt's suggestion, sent once the turn has ended: while a turn runs the box shows none.
+async function suggestUrgent($) {
+  const item = suggestable(items)
+  if (!item || working) return
+  const r = await $.prompt.suggest({ text: suggestText(item) })
+  if (!r?.isShown) await logDebug($, 'loose-ends: la sugerencia del cabo urgente no se mostró')
 }
 
 async function addByHand($, text) {
@@ -655,8 +721,11 @@ export function register(on) {
     touched = new Set()
     sessionRepo = null
     await guarded($, 'resolver el repo de la sesión', () => refreshSessionRepo($))
-    branch = await readBranch($)
-    await load($)
+    branch = null
+    await guarded($, 'leer la rama', async () => {
+      branch = await readBranch($)
+    })
+    await guarded($, 'leer los cabos', () => load($))
     notice = null
     sync = null
     if (sessionRepo) background($, startSync($, sessionRepo), 'traer los cabos de origin')
@@ -680,7 +749,7 @@ export function register(on) {
       if (isPush(e.command, failed)) background($, afterUserPush($), 'subir los cabos tras tu push')
     }
     const passing = passingFor(e)
-    if (passing && r && !r.deny) {
+    if (passing && r && !r.deny && !r.isError) {
       passed.add(passing.rel)
       return { ...r, context: [...(r.context ?? []), passing.text] }
     }
@@ -720,8 +789,7 @@ export function register(on) {
     const now = await nowIso($)
     await guarded($, 'refrescar los cabos tras el turno', () => mutate($, list => expireCandidates(list, now)))
     if (sessionRepo) await guarded($, 'apuntar lo visto del repo', () => recordSeen($, sessionRepo, { compare: false }))
-    const urgent = topUrgent(items)
-    if (urgent && !candidates(items).length) background($, $.prompt.suggest({ text: suggestText(urgent) }), 'sugerir el cabo urgente')
+    if (suggestable(items)) $.clock.after(500, () => background($, suggestUrgent($), 'sugerir el cabo urgente'))
     if (e.reason === 'answer' && typeof e.answer === 'string' && e.answer.trim()) {
       if (shouldSweep(e.answer) || live(items).some(i => i.status === 'doing')) {
         const set = touched
@@ -742,10 +810,21 @@ export function register(on) {
       target = await repoOf($, e.repo.trim(), { fresh: true })
       if (!target) return { result: NOT_A_REPO }
     } else if (!target) return { result: NO_GIT_NOTE }
-    const out = await offer($, { text: e.text, category: e.category, priority: e.priority, evidence: e.evidence, file: relativeTo(target, e.file), source: 'tool' }, target)
+    let out
+    try {
+      out = await offer($, { text: e.text, category: e.category, priority: e.priority, evidence: e.evidence, file: relativeTo(target, e.file), source: 'tool' }, target)
+    } catch (err) {
+      return { result: toolUnreadable(target, err?.message ?? String(err)) }
+    }
     if (out.error) return { result: toolUnreadable(target, out.error) }
     if (out.reason) return { result: toolRejected(out.reason) }
     return { result: toolProposed(out.added) }
+  })
+
+  on('prompt.suggest', async ($, e, next) => {
+    if (e.origin?.kind !== 'suggestion') return next(e)
+    const item = suggestable(items)
+    return item ? next({ ...e, text: suggestText(item) }) : next(e)
   })
 
   on('prompt.compose', async ($, e, next) => {

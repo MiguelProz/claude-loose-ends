@@ -1,26 +1,34 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { GIT_ENV, REMOTE_REF, ZERO, blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, mergeItems, pushArgs, shaArgs, trackArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
+import { FETCH_ARGS, GIT_ENV, NET_ENV, REF, REMOTE_REF, blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, mergeItems, pushArgs, sameItems, shaArgs, trackArgs, treeInput, updateArgs } from '../lib/refstore.mjs'
 
 const item = (id: string, over = {}) => ({ id, text: id, createdAt: '2026-10-04T09:00:00.000Z', ...over })
 
 describe('refstore argv', () => {
+  test('the data ref has two components under refs/, so a remote takes it; the tracking copy stays outside refs/remotes', () => {
+    expect(REF).toBe('refs/loose-ends/items')
+    expect(REMOTE_REF).toBe('refs/loose-ends/origin')
+    expect(FETCH_ARGS).toEqual(['fetch', '--quiet', 'origin', '+refs/loose-ends/items:refs/loose-ends/origin'])
+  })
   test('reads go through rev-parse and cat-file of the one blob', () => {
-    expect(shaArgs()).toEqual(['rev-parse', '--verify', '--quiet', 'refs/loose-ends'])
-    expect(shaArgs(REMOTE_REF)).toEqual(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/loose-ends'])
+    expect(shaArgs()).toEqual(['rev-parse', '--verify', '--quiet', 'refs/loose-ends/items'])
+    expect(shaArgs(REMOTE_REF)).toEqual(['rev-parse', '--verify', '--quiet', 'refs/loose-ends/origin'])
     expect(blobArgs('abc')).toEqual(['cat-file', 'blob', 'abc:loose-ends.json'])
   })
   test('writes: tree line, commit with or without parent, update-ref guarded by the old value', () => {
     expect(treeInput('b1')).toBe('100644 blob b1\tloose-ends.json\n')
     expect(commitArgs('t1', null)).toEqual(['commit-tree', 't1', '-m', 'loose-ends'])
     expect(commitArgs('t1', 'p1')).toEqual(['commit-tree', 't1', '-p', 'p1', '-m', 'loose-ends'])
-    expect(updateArgs('n1', 'p1')).toEqual(['update-ref', 'refs/loose-ends', 'n1', 'p1'])
-    expect(updateArgs('n1', null)).toEqual(['update-ref', 'refs/loose-ends', 'n1', ZERO])
-    expect(ZERO).toBe('0'.repeat(40))
+    expect(updateArgs('n1', 'p1')).toEqual(['update-ref', 'refs/loose-ends/items', 'n1', 'p1'])
+    // empty, not 40 zeros: a SHA-256 repo refuses a SHA-1 zero id
+    expect(updateArgs('n1', null)).toEqual(['update-ref', 'refs/loose-ends/items', 'n1', ''])
   })
-  test('push leases what was fetched; the tracking ref follows what was pushed', () => {
-    expect(pushArgs('r1')).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends:r1', 'origin', 'refs/loose-ends:refs/loose-ends'])
-    expect(pushArgs(null)).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends:', 'origin', 'refs/loose-ends:refs/loose-ends'])
-    expect(trackArgs('n1')).toEqual(['update-ref', 'refs/remotes/origin/loose-ends', 'n1'])
+  test('push leases what was fetched and sends the commit that was read; the tracking ref follows it', () => {
+    expect(pushArgs('r1', 'n1')).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends/items:r1', 'origin', 'n1:refs/loose-ends/items'])
+    expect(pushArgs(null, 'n1')).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends/items:', 'origin', 'n1:refs/loose-ends/items'])
+    expect(trackArgs('n1')).toEqual(['update-ref', 'refs/loose-ends/origin', 'n1'])
+  })
+  test('fetch and push never wait for a credential prompt', () => {
+    expect(NET_ENV).toEqual({ GIT_TERMINAL_PROMPT: '0' })
   })
   test('the commit of a turn is the last one made since the turn started', () => {
     expect(lastCommitArgs('2026-10-04T10:00:00.000Z')).toEqual(['log', '-1', '--since=2026-10-04T10:00:00.000Z', '--format=%h'])
@@ -54,5 +62,15 @@ describe('mergeItems', () => {
     const mine = [item('a', { text: 'mía', updatedAt: '2026-10-04T10:00:00.000Z' }), item('b', { text: 'mía' }), item('c', { text: 'mía', updatedAt: '2026-10-04T10:00:00.000Z' })]
     const theirs = [item('a', { text: 'suya', updatedAt: '2026-10-04T11:00:00.000Z' }), item('b', { text: 'suya', createdAt: '2026-10-04T08:00:00.000Z' }), item('c', { text: 'suya', updatedAt: '2026-10-04T10:00:00.000Z' })]
     expect(mergeItems(mine, theirs).map(i => i.text)).toEqual(['suya', 'mía', 'mía'])
+  })
+})
+
+describe('sameItems', () => {
+  test('the same items in any order are the same; a changed, missing or extra item is not', () => {
+    expect(sameItems([item('a'), item('b')], [item('b'), item('a')])).toBe(true)
+    expect(sameItems([], [])).toBe(true)
+    expect(sameItems([item('a')], [item('a', { text: 'otro' })])).toBe(false)
+    expect(sameItems([item('a')], [item('a'), item('b')])).toBe(false)
+    expect(sameItems([item('a'), item('a')], [item('a'), item('b')])).toBe(false)
   })
 })

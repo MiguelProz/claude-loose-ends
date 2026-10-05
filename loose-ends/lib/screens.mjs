@@ -31,6 +31,11 @@ export function bandLine(m) {
   return null
 }
 
+// A text as literal Markdown: an item's text, which a model may write, cannot draw a link, an autolink or emphasis.
+export function escapeMarkdown(text) {
+  return String(text ?? '').replace(/[\\[\]()*_`<>]/g, '\\$&')
+}
+
 export function renderBand(el, surface, m, actions) {
   const line = bandLine(m)
   const press = () => (line?.action === 'undo' ? actions.undoClose() : actions.openPane())
@@ -45,7 +50,7 @@ export function renderBand(el, surface, m, actions) {
   const children = [el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 24, height: 20 })]
   if (line) {
     const href = line.action === 'undo' ? UNDO_HREF : OPEN_PANE_HREF
-    children.push(el.Markdown({ key: 'band-line', dimColor: true, text: `${line.text} · [${line.label}](${href})`, pressableLinks: [href], onLinkPress: press }))
+    children.push(el.Markdown({ key: 'band-line', dimColor: true, text: `${escapeMarkdown(line.text)} · [${line.label}](${href})`, pressableLinks: [href], onLinkPress: press }))
   }
   return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
 }

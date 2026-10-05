@@ -39,6 +39,8 @@ export function parseItems(text) {
   } catch {
     return { ok: false, error: 'json' }
   }
+  // a newer version's states would come back as open and be written over: its blob is left alone
+  if (data && typeof data.version === 'number' && data.version > 2) return { ok: false, error: 'version' }
   if (!data || !Array.isArray(data.items)) return { ok: false, error: 'shape' }
   if (!data.items.every(i => i && typeof i === 'object' && typeof i.id === 'string')) return { ok: false, error: 'shape' }
   return { ok: true, items: data.items.map(upgrade) }
@@ -158,6 +160,13 @@ export function counts(items) {
 }
 
 export const topUrgent = items => live(items).find(i => i.priority === 'high') ?? null
+
+// The urgent item the prompt may propose: one still open (not started) with no closure waiting, and only while no
+// candidate waits for the person.
+export function suggestable(items) {
+  if (items.some(i => i.status === 'candidate')) return null
+  return live(items).find(i => i.priority === 'high' && i.status === 'open' && !i.proposal) ?? null
+}
 
 // What the repo looks like to a session: every id, and the ones still to do.
 export function snapshot(items, now) {

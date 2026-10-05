@@ -50,6 +50,13 @@ describe('band', () => {
     line.props.onLinkPress()
     expect(undone).toEqual(['undo'])
   })
+  test('desktop: Markdown specials of an item text are escaped, so it cannot draw a link; the terminal shows the text as it is', () => {
+    const urgent = item({ text: '[Pulsa](https://x.y) *ya* `a_b` \\ <https://x.y>' })
+    const desk = renderBand(fake, 'desktop', band({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent }), { openPane: noop, undoClose: noop })
+    expect(byKey(desk, 'band-line').props.text).toBe('Urgente: \\[Pulsa\\]\\(https://x.y\\) \\*ya\\* \\`a\\_b\\` \\\\ \\<https://x.y\\> · [Ver](' + OPEN_PANE_HREF + ')')
+    const term = renderBand(fake, 'terminal', band({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent }), { openPane: noop, undoClose: noop })
+    expect(texts(term)[1]).toBe('Urgente: [Pulsa](https://x.y) *ya* `a_b` \\ <https://x.y>')
+  })
   test('terminal: a dim face, the dim line and a plain button', () => {
     const root = renderBand(fake, 'terminal', band({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent: item({ text: 'Arreglar el login' }) }), { openPane: noop, undoClose: noop })
     expect(texts(root)).toEqual(['(•_•)!', 'Urgente: Arreglar el login'])

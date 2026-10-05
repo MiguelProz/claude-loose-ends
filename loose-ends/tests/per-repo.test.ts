@@ -100,6 +100,26 @@ test('the sweep files a new item in a repo touched this turn when Haiku names it
   expect(w.saved()[0].proposal.quote).toBe('y el test lo omito por ahora')
 })
 
+test('a candidate the sweep cannot file in one repo does not stop the rest of the sweep', async ($, on) => {
+  const missing: string[] = []
+  const w = world(on, {}, { repos: REPOS, refs: { [ROOT]: own }, missing })
+  on('model.complete', () => {
+    // the other repo goes away while Haiku answers: every git call there fails
+    missing.push(OTHER)
+    return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"y el test lo omito por ahora"}]}')
+  })
+  tools(on)
+  turns(on)
+  await w.start($)
+  await startTurn($)
+  await $.tool.call({ tool: 'Edit', file_path: '/other/src/a.ts' })
+  await endTurn($)
+  await w.clock.settle()
+  expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Cabo para la sesión', 'candidate']])
+  expect(w.saved()[0].proposal.quote).toBe('y el test lo omito por ahora')
+  expect(w.logs.some(l => l.includes('/other') && l.includes('falló'))).toBe(true)
+})
+
 test('the sweep falls back to the session repo when the path is not a candidate', async ($, on) => {
   const w = world(on, {}, { repos: REPOS })
   on('model.complete', () => answered('{"new":[{"text":"Cabo con repo inventado","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"}],"resolved":[]}'))
