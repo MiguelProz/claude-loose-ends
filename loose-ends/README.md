@@ -2,34 +2,42 @@
 
 Cuaderno de la sesión para Claude Code, con Chispa.
 
-- **Cabos sueltos**: lo que Claude menciona y no hace. Claude los apunta con la
-  herramienta `note_loose_end`, y tras cada respuesta larga (500 caracteres o
-  más) Haiku (`claude-haiku-4-5-20251001`) caza los que se le escaparon y cierra
-  los que quedaron resueltos. Solo cuenta como cabo el trabajo concreto que se
-  deja sin hacer (un bug o una deuda sin arreglar, un test que se salta, un
-  aviso que se ignora), no esperas, comprobaciones, preguntas ni informes de
-  estado. El barrido apunta como máximo 2 por respuesta y solo si cita
-  literalmente la frase de la respuesta donde lo deja sin hacer (sin contar
-  Markdown, comillas ni viñetas).
-- **Dónde se guardan**: `.claude/loose-ends.json` en la raíz del **repo git al
-  que pertenece cada cabo**, no en el de la sesión que lo encontró. Sin
-  `repo`, la herramienta apunta en el repo de la sesión; con `repo` (ruta
-  absoluta de un fichero o carpeta del otro repo) apunta en ese. El barrido
-  reparte los cabos entre los repos que Claude tocó en el turno. Una sesión
-  solo ve y recuerda los cabos de su propio repo. Fuera de un repo git no se
-  guarda nada de la sesión (nunca en `~/.claude/`). Versiónalo con el repo: así
-  viaja entre ordenadores y ramas.
-- **Banda** encima del prompt: una línea discreta con Chispa (animada en la app
-  de escritorio, una cara de texto en la terminal), un resumen atenuado como
-  `3 pendientes (1 urgente) · plan 4/7` y el enlace `Ver`. Sin nada que contar,
-  solo Chispa.
-- **Panel** (`/pendientes` o el enlace `Ver`): pendientes, plan de la sesión y
-  lo hecho hoy (plegado). Cada pendiente enseña `Hacer`, `Hecho` y `···`; este
-  último despliega la evidencia, `Cola`, `Descartar` y la prioridad (`Urgente`,
-  `Normal`, `Baja`). En la superficie `mobile` el panel no dibuja nada (no
-  tiene campos de texto); la banda sí.
-- **Cola al terminar**: al cerrar la tarea, Claude recibe una vez los cabos en
-  cola; si no los resuelve, vuelven a abiertos.
+- **Candidatos, no cabos**: lo que Claude deja sin hacer (un bug que ve, una
+  deuda, un test que se salta, un aviso que ignora, una mejora fuera de
+  alcance) llega como candidato. Lo proponen Claude, con la herramienta
+  `note_loose_end` y una categoría (`bug`, `deuda`, `test`, `aviso`, `mejora`),
+  y Haiku (`claude-haiku-4-5-20251001`) tras cada respuesta de 500 caracteres o
+  más, citando literalmente la frase. Antes, un filtro fijo descarta lo que no
+  es trabajo sobre el código (comprobar, esperar, decidir, avisar, hacer push,
+  desplegar), lo repetido y lo parecido a lo que ya rechazaste.
+- **Tú decides**: el candidato aparece bajo el mensaje de Claude donde nació,
+  con la frase en negrita, y `Guardar`, `No es un cabo` o `Editar`. Lo que no
+  revises espera en el panel y caduca a los 7 días. Cada «No es un cabo» enseña
+  al barrido: los últimos 20 van en su prompt.
+- **Cierre con prueba**: Haiku nunca cierra nada. Si una respuesta deja un cabo
+  hecho, propone «¿Resuelto?» con la frase que lo prueba y el commit del turno;
+  tú confirmas o dices «Sigue abierto». Tras `Hacer` mira la respuesta siempre,
+  sea larga o corta.
+- **Dónde se guardan**: en la ref `refs/loose-ends` del repo git al que
+  pertenece cada cabo, fuera de tus ramas. No ensucian `git status`, no hacen
+  commits en tu rama y todos los worktrees del repo ven la misma lista. Con
+  `origin`, se traen al empezar la sesión y se suben tras tu `git push`: la
+  primera vez pregunta, y `Siempre` o `Nunca` quedan en
+  `git config loose-ends.sync`. Fuera de un repo git no se guarda nada (nunca
+  en `~/.claude/`).
+- **Banda** encima del prompt: Chispa y una línea con una acción, la primera
+  que aplique: `N por revisar · Revisar`, `Urgente: … · Ver`,
+  `Cerrado: … · Deshacer`, `Desde ayer: … · Ver` o `N abiertos · Ver`.
+- **Chispa** lleva la señal: sostiene una nota si hay candidatos, se preocupa
+  con un urgente, celebra al cerrar, trabaja durante el turno y solo duerme
+  tras 30 minutos quieta y sin nada pendiente.
+- **Panel** (`/pendientes` o la acción de la banda): Por revisar, Abiertos (la
+  prioridad cambia con un toque, `editar`, `Hacer`, `Hecho`, `Descartar` y
+  «¿Sigue vigente?» a los 14 días sin cambios) y Cerrados esta semana con `↺`.
+  El campo de arriba apunta un cabo a mano. En móvil se ve igual, sin campos de
+  texto.
+- **De paso**: si Claude lee o edita un fichero con cabos abiertos, se lo
+  recuerda. Con un urgente y el prompt vacío, lo propone en gris; `Tab` lo usa.
 
 Requiere Claude Code 2.1.287 o posterior (probado con 2.1.288).
 
@@ -39,17 +47,22 @@ Requiere Claude Code 2.1.287 o posterior (probado con 2.1.288).
     /plugin install loose-ends@claude-loose-ends
     /reload-plugins
 
-## Conflictos de merge
+## Venir de 0.3
 
-`.claude/loose-ends.json` va versionado: si dos ramas apuntaron cabos nuevos, el
-merge tendrá conflicto en ese fichero. Resuélvelo conservando los dos arrays
-`items` (la unión, sin repetir `id`). Mientras el fichero tenga marcas de
-conflicto el mod no escribe y la banda avisa.
+La primera sesión en cada repo importa `.claude/loose-ends.json` a
+`refs/loose-ends` y lo dice una vez en el panel. Después puedes borrar el
+fichero del repo con `git rm .claude/loose-ends.json`.
+
+## Ver los cabos a mano
+
+    git show refs/loose-ends:loose-ends.json
+
+La ref no se ve en la web de GitHub.
 
 ## Desactivar
 
 `/plugin` → pestaña Installed → loose-ends. Los datos se quedan en
-`.claude/loose-ends.json` de cada repo.
+`refs/loose-ends` de cada repo.
 
 ## Desarrollar
 
