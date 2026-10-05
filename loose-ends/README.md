@@ -18,7 +18,7 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   hecho, propone «¿Resuelto?» con la frase que lo prueba y, si el turno hizo
   un commit, ese commit; tú confirmas o dices «Sigue abierto». Tras `Hacer`
   mira la respuesta siempre, sea larga o corta.
-- **Dónde se guardan**: en la ref `refs/loose-ends` del repo git al que
+- **Dónde se guardan**: en la ref `refs/loose-ends/items` del repo git al que
   pertenece cada cabo, fuera de tus ramas. No ensucian `git status`, no hacen
   commits en tu rama y todos los worktrees del repo ven la misma lista. Con
   `origin`, se traen al empezar la sesión y se suben tras un `git push` que
@@ -40,8 +40,9 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   El campo de arriba apunta un cabo a mano. En móvil se ve igual, sin campos de
   texto.
 - **De paso**: si Claude lee o edita un fichero con cabos abiertos, se lo
-  recuerda. Con un urgente abierto, sin candidatos por revisar y el prompt
-  vacío, lo propone en gris; `Tab` lo usa.
+  recuerda. Con un urgente abierto, sin empezar y sin cierre propuesto, y sin
+  candidatos por revisar, lo propone en gris en el prompt vacío en lugar de la
+  sugerencia de Claude Code; `Tab` lo usa.
 
 Requiere Claude Code 2.1.287 o posterior (probado con 2.1.288).
 
@@ -54,22 +55,30 @@ Requiere Claude Code 2.1.287 o posterior (probado con 2.1.288).
 ## Venir de 0.3
 
 La primera sesión en cada repo importa `.claude/loose-ends.json` a
-`refs/loose-ends` y lo dice una vez en el panel. Después puedes borrar el
+`refs/loose-ends/items` y lo dice una vez en el panel. Después puedes borrar el
 fichero del repo con `git rm .claude/loose-ends.json`.
 
 ## Ver los cabos a mano
 
-    git show refs/loose-ends:loose-ends.json
+    git show refs/loose-ends/items:loose-ends.json
 
-La ref no se ve en la web de GitHub.
+Lo que había en origin la última vez que se trajo o se subió está en
+`refs/loose-ends/origin` (fuera de `refs/remotes`, así que no sale en
+`git branch -r`). Ninguna de las dos se ve en la web de GitHub.
 
 ## Desactivar
 
 `/plugin` → pestaña Installed → loose-ends. Los datos se quedan en
-`refs/loose-ends` de cada repo.
+`refs/loose-ends/items` de cada repo.
 
 ## Desarrollar
 
     claude --plugin-dir ./loose-ends
     cd loose-ends && claude plugin test && claude plugin validate . --strict
-    node scripts/chispa-gallery.mjs /tmp/chispa.html
+    node ../scripts/chispa-gallery.mjs /tmp/chispa.html
+    node ../scripts/git-smoke.mjs
+
+`git-smoke.mjs` repite con git de verdad, en una carpeta temporal con un remoto
+y dos clones, los comandos que el mod lanza sobre la ref: crearla, subirla con
+lease, traerla al otro clon y el rechazo cuando origin cambió. Dice `OK` o el
+paso que falló.
