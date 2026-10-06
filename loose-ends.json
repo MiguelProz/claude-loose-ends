@@ -118,6 +118,18 @@
         "quote": "he quitado la muestra de la barra"
       },
       "closedAt": "2026-10-06T08:26:08.837Z"
+    },
+    {
+      "id": "6d382999",
+      "text": "Mejorar la visibilidad de la barra de cabos abiertos en modo oscuro: añadir fondo más claro a la tarjeta y hacer el número y «Ver» más visibles",
+      "category": "mejora",
+      "priority": "low",
+      "source": "sweep",
+      "evidence": "puedo hacer que destaque más. Le daría a la tarjeta un fondo algo más claro que el resto, como el chip del fichero en el Cuaderno, pondría el número en claro también en «1 abierto» y haría «Ver» más visible.",
+      "branch": "master",
+      "createdAt": "2026-10-06T08:28:12.628Z",
+      "updatedAt": "2026-10-06T08:28:12.628Z",
+      "status": "candidate"
     }
   ]
 }
