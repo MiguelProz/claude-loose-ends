@@ -1,7 +1,6 @@
 import { chispaSvg, MOOD_LABELS, TERMINAL_FACES } from './chispa.mjs'
 
-// The pane opens, and the last close is undone, from a link at the end of the band's line, so the band stays a
-// light row on the desktop instead of carrying a native button.
+// The two hrefs of the band's link (band-line): with the first the pane opens, with the second the last close is undone.
 export const OPEN_PANE_HREF = 'file:///loose-ends/ver'
 export const UNDO_HREF = 'file:///loose-ends/deshacer'
 export const PRIORITY_WORD = { high: 'urgente', medium: 'normal', low: 'baja' }
@@ -19,7 +18,7 @@ export function recapText({ since, fresh, closed }) {
   return `Desde ${since}: ${parts.join(' · ')}`
 }
 
-// What the band says, the first that applies: unreadable, to review, urgent, just closed, since last time, open.
+// What the terminal's line says, the first that applies: unreadable, to review, urgent, just closed, since last time, open.
 export function bandLine(m) {
   if (m.fileError) return { text: 'No puedo leer los cabos', action: 'open', label: 'Ver', warning: true }
   const open = m.counts.live ? plural(m.counts.live, 'abierto', 'abiertos') : ''
@@ -57,7 +56,7 @@ export function bandCard(m) {
     return { border: 'claude', top: { text: n === 1 ? '1 cabo espera tu visto bueno' : `${n} cabos esperan tu visto bueno` }, bottom, button: { label: 'Revisar', action: 'open' }, link: null }
   }
   if (m.justClosed) {
-    const bottom = next ? [{ text: `Quedan ${m.counts.live}` }, { text: `siguiente: ${clip(next.text)}` }] : [{ text: 'No queda nada abierto' }]
+    const bottom = next ? [{ text: `${m.counts.live === 1 ? 'Queda' : 'Quedan'} ${m.counts.live}` }, { text: `siguiente: ${clip(next.text)}` }] : [{ text: 'No queda nada abierto' }]
     return { border: 'success', top: { text: `Cerrado: ${clip(m.justClosed.text)}` }, bottom, button: doNext, link: { label: 'Deshacer', action: 'undo' } }
   }
   if (m.recap && (m.recap.fresh || m.recap.closed)) {
@@ -69,7 +68,7 @@ export function bandCard(m) {
   const byPriority = PRIORITY_COUNT.filter(([p]) => m.counts[p]).map(([p, one, many]) => ({ text: plural(m.counts[p], one, many), priority: p }))
   return {
     border: nextBorder,
-    top: { text: next.text, priority: next.priority, ...(next.file ? { file: next.file } : {}) },
+    top: { text: clip(next.text, 120), priority: next.priority, ...(next.file ? { file: next.file } : {}) },
     bottom: [{ text: label }, ...byPriority, ...sync],
     button: doNext,
     link: { label: 'Cuaderno', action: 'open' },

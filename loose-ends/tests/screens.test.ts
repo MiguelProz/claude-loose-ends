@@ -5,7 +5,6 @@ const fake = new Proxy({}, { get: (_, type) => (props: any) => ({ type, props })
 const flat = (node: any): any[] => [node, ...([] as any[]).concat(node?.props?.children ?? []).flatMap(c => (typeof c === 'object' ? flat(c) : []))]
 const byKey = (node: any, key: string) => flat(node).find(n => n?.props?.key === key)
 const texts = (node: any) => flat(node).filter(n => n?.type === 'Text').map(n => String(n.props.children))
-const noop = () => {}
 const counts = (over = {}) => ({ candidates: 0, live: 0, high: 0, medium: 0, low: 0, ...over })
 const band = (over = {}) => ({ mood: 'idle', counts: counts(), urgent: null, next: null, justClosed: null, recap: null, fileError: null, sync: null, working: false, ...over })
 const item = (over = {}) => ({ id: 'c1', text: 'Corregir los revalidatePath del grupo (app)', category: 'deuda', priority: 'medium', status: 'candidate', evidence: 'unos 41 revalidatePath ya no coinciden', createdAt: '2026-10-04T09:00:00.000Z', ...over })
@@ -60,6 +59,7 @@ describe('band card', () => {
       button: { label: 'Hacer', action: 'doNow', id: 'o1' },
       link: { label: 'Deshacer', action: 'undo' },
     })
+    expect(bandCard(band({ counts: counts({ live: 1, medium: 1 }), justClosed: { text: 'Sección Actualizar' }, next: next() }))?.bottom[0]).toEqual({ text: 'Queda 1' })
     expect(bandCard(band({ justClosed: { text: 'El último' } }))).toEqual({
       border: 'success', top: { text: 'Cerrado: El último' }, bottom: [{ text: 'No queda nada abierto' }], button: null, link: { label: 'Deshacer', action: 'undo' },
     })
@@ -85,6 +85,9 @@ describe('band card', () => {
       button: { label: 'Hacer', action: 'doNow', id: 'o1' },
       link: { label: 'Cuaderno', action: 'open' },
     })
+    const long = bandCard(band({ counts: counts({ live: 1, medium: 1 }), next: next({ text: 'y'.repeat(200) }) }))?.top.text
+    expect(long).toHaveLength(120)
+    expect(long?.endsWith('…')).toBe(true)
   })
   test('normal: an urgent next one turns the border red and says Urgente; one in progress says En curso; the ref words', () => {
     expect(bandCard(band({ counts: counts({ live: 1, high: 1 }), next: next({ priority: 'high' }) }))).toMatchObject({

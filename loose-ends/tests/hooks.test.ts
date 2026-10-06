@@ -540,6 +540,23 @@ test('band: Hacer on the desktop starts the next loose end and sends its prompt'
   await desk.unmount()
 })
 
+test('band: during a turn Hacer is dim and does nothing', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el login', { priority: 'high' }), it('a2', 'Tipar drafts')) } })
+  drawEngine(on)
+  turns(on)
+  let sent = ''
+  on('prompt.submit', ($: any, e: any) => { sent = e.text; return { text: e.text } })
+  await w.start($)
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  const desk = await band($)
+  expect((await desk.find({ key: 'band-act' }))?.props.dimColor).toBe(true)
+  await desk.press({ key: 'band-act' })
+  await w.clock.settle()
+  expect(sent).toBe('')
+  expect(find(w, 'a1').status).toBe('open')
+  await desk.unmount()
+})
+
 test('band: an urgent item is named and worries Chispa', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el login', { priority: 'high' })) } })
   drawEngine(on)
