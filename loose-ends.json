@@ -53,12 +53,13 @@
       "id": "83e656f1",
       "text": "Añadir al README de loose-ends una sección «Actualizar»: refrescar primero el marketplace (/plugin → Marketplaces → claude-loose-ends → Update, o `claude plugin marketplace update claude-loose-ends`) y después actualizar el plugin.",
       "priority": "medium",
-      "status": "open",
+      "status": "done",
       "source": "tool",
       "evidence": "El README no explica que hay que refrescar el marketplace antes de que aparezca «actualizar».",
       "branch": "master",
       "createdAt": "2026-10-06T07:42:49.846Z",
-      "updatedAt": "2026-10-06T07:42:49.846Z"
+      "updatedAt": "2026-10-06T07:43:38.595Z",
+      "closedAt": "2026-10-06T07:43:38.595Z"
     },
     {
       "id": "46e9aa4b",
