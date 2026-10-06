@@ -180,6 +180,18 @@
       "createdAt": "2026-10-06T21:41:07.569Z",
       "updatedAt": "2026-10-06T21:43:40.207Z",
       "status": "doing"
+    },
+    {
+      "id": "860a6532",
+      "text": "Fusionar y subir a main los commits 6cf1273 y 7c999a2 de la rama hacer-compartido",
+      "category": "deuda",
+      "priority": "high",
+      "source": "sweep",
+      "evidence": "Está en la rama hacer-compartido junto con el arreglo de pressNow (7c999a2), y ninguno de los dos está fusionado ni subido.",
+      "branch": "hacer-compartido",
+      "createdAt": "2026-10-06T21:44:24.189Z",
+      "updatedAt": "2026-10-06T21:44:24.189Z",
+      "status": "candidate"
     }
   ]
 }
