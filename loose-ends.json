@@ -95,8 +95,9 @@
       "evidence": "El camino por /plugin no lo he recorrido pulsando en la app",
       "branch": "master",
       "createdAt": "2026-10-06T07:46:20.328Z",
-      "updatedAt": "2026-10-06T07:46:20.328Z",
-      "status": "candidate"
+      "updatedAt": "2026-10-06T07:47:04.087Z",
+      "status": "rejected",
+      "closedAt": "2026-10-06T07:47:04.087Z"
     }
   ]
 }
