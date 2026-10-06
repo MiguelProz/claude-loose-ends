@@ -161,13 +161,13 @@
       "evidence": "El «Hacer» de la barra repite la misma línea que el del Cuaderno; el revisor prefirió no juntarlos.",
       "branch": "banda-0.4.4",
       "createdAt": "2026-10-06T21:41:07.485Z",
-      "updatedAt": "2026-10-06T21:43:07.491Z",
-      "status": "doing",
-      "proposal": {
+      "updatedAt": "2026-10-06T21:43:28.329Z",
+      "status": "done",
+      "proof": {
         "quote": "He quitado la repetición: el «Hacer» del Cuaderno y el de la barra ahora llaman a la misma función, pressNow, en [register.mjs](loose-ends/hooks/register.mjs).",
-        "commit": "7c999a2",
-        "at": "2026-10-06T21:43:07.491Z"
-      }
+        "commit": "7c999a2"
+      },
+      "closedAt": "2026-10-06T21:43:28.329Z"
     },
     {
       "id": "e3d660ed",
