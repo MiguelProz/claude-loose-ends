@@ -1,7 +1,7 @@
 import { chispaSvg, MOOD_LABELS, TERMINAL_FACES } from './chispa.mjs'
 
-// The pane opens, and the last close is undone, from links inside the band's one line of text, so the band
-// stays a single native-looking row on the desktop.
+// The pane opens, and the last close is undone, from a link at the end of the band's line, so the band stays a
+// light row on the desktop instead of carrying a native button.
 export const OPEN_PANE_HREF = 'file:///loose-ends/ver'
 export const UNDO_HREF = 'file:///loose-ends/deshacer'
 export const PRIORITY_WORD = { high: 'urgente', medium: 'normal', low: 'baja' }
@@ -20,20 +20,33 @@ export function recapText({ since, fresh, closed }) {
 }
 
 // What the band says, the first that applies: unreadable, to review, urgent, just closed, since last time, open.
+// `strong` is the part of `text` the desktop draws bright, the rest dim; empty, the whole line is dim.
 export function bandLine(m) {
-  if (m.fileError) return { text: 'No puedo leer los cabos', action: 'open', label: 'Ver', warning: true }
+  if (m.fileError) return { text: 'No puedo leer los cabos', strong: 'No puedo leer los cabos', action: 'open', label: 'Ver', warning: true }
   const open = m.counts.live ? plural(m.counts.live, 'abierto', 'abiertos') : ''
-  if (m.counts.candidates) return { text: [`${m.counts.candidates} por revisar`, open].filter(Boolean).join(' · '), action: 'open', label: 'Revisar' }
-  if (m.urgent) return { text: `Urgente: ${clip(m.urgent.text)}`, action: 'open', label: 'Ver' }
-  if (m.justClosed) return { text: `Cerrado: ${clip(m.justClosed.text)}`, action: 'undo', label: 'Deshacer' }
-  if (m.recap && (m.recap.fresh || m.recap.closed)) return { text: recapText(m.recap), action: 'open', label: 'Ver' }
-  if (open) return { text: open, action: 'open', label: 'Ver' }
+  if (m.counts.candidates) {
+    const review = `${m.counts.candidates} por revisar`
+    return { text: [review, open].filter(Boolean).join(' · '), strong: review, action: 'open', label: 'Revisar' }
+  }
+  if (m.urgent) return { text: `Urgente: ${clip(m.urgent.text)}`, strong: clip(m.urgent.text), action: 'open', label: 'Ver' }
+  if (m.justClosed) return { text: `Cerrado: ${clip(m.justClosed.text)}`, strong: clip(m.justClosed.text), action: 'undo', label: 'Deshacer' }
+  if (m.recap && (m.recap.fresh || m.recap.closed)) return { text: recapText(m.recap), strong: '', action: 'open', label: 'Ver' }
+  if (open) return { text: open, strong: '', action: 'open', label: 'Ver' }
   return null
 }
 
-// A text as literal Markdown: an item's text, which a model may write, cannot draw a link, an autolink or emphasis.
-export function escapeMarkdown(text) {
-  return String(text ?? '').replace(/[\\[\]()*_`<>]/g, '\\$&')
+// The line split around its strong part: what comes before and after it dim, the part itself bright (or in the
+// warning color). An item text goes in a Text, never in Markdown, so a text the model wrote cannot draw a link.
+function lineParts(el, line) {
+  const at = line.strong ? line.text.indexOf(line.strong) : -1
+  if (at < 0) return [el.Text({ dimColor: true, children: line.text })]
+  const before = line.text.slice(0, at).trim()
+  const after = line.text.slice(at + line.strong.length).trim()
+  return [
+    ...(before ? [el.Text({ dimColor: true, children: before })] : []),
+    el.Text({ ...(line.warning ? { color: 'warning' } : {}), children: line.strong }),
+    ...(after ? [el.Text({ dimColor: true, children: after })] : []),
+  ]
 }
 
 export function renderBand(el, surface, m, actions) {
@@ -47,12 +60,24 @@ export function renderBand(el, surface, m, actions) {
     }
     return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
   }
-  const children = [el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 24, height: 20 })]
-  if (line) {
-    const href = line.action === 'undo' ? UNDO_HREF : OPEN_PANE_HREF
-    children.push(el.Markdown({ key: 'band-line', dimColor: true, text: `${escapeMarkdown(line.text)} · [${line.label}](${href})`, pressableLinks: [href], onLinkPress: press }))
-  }
-  return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
+  const chispa = el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 36, height: 30 })
+  if (!line) return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children: [chispa] })
+  // a card like the pane's: Chispa, the line, and the action as a link pushed to the end
+  const href = line.action === 'undo' ? UNDO_HREF : OPEN_PANE_HREF
+  return el.Box({
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
+    borderStyle: 'round',
+    borderColor: 'promptBorder',
+    paddingX: 1,
+    children: [
+      chispa,
+      ...lineParts(el, line),
+      el.Box({ flexGrow: 1 }),
+      el.Markdown({ key: 'band-line', text: `[${line.label}](${href})`, pressableLinks: [href], onLinkPress: press }),
+    ],
+  })
 }
 
 // The first verbatim occurrence of `quote` in a message's markdown, in bold; the text as it was when it is not there.
