@@ -82,6 +82,17 @@ test('the same items under different commits converge on origin commit, and noth
   expect(w.pushes).toEqual([])
 })
 
+test('if another session moves the ref while it converges on origin, it merges both instead', async ($, on) => {
+  const local = item('a1', 'Local')
+  const fromOrigin = { ...item('a1', 'De origin'), updatedAt: '2026-10-04T09:30:00.000Z' }
+  const w = world(on, {}, { refs: { [ROOT]: blob(local) }, remote: { [ROOT]: blob(fromOrigin) } })
+  // the fast-forward to origin's commit loses its compare-and-swap: another session wrote b2 just before
+  w.race(ROOT, blob(local, item('b2', 'De otra sesi\u00f3n')))
+  await w.start($)
+  await w.clock.settle()
+  expect(w.saved().map((i: any) => i.text)).toEqual(['De origin', 'De otra sesi\u00f3n'])
+})
+
 test('the same items in another order also converge, so two machines never push in turns', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(item('b2', 'De aquí'), item('a1', 'De allí')) }, remote: { [ROOT]: blob(item('a1', 'De allí'), item('b2', 'De aquí')) } })
   await w.start($)
