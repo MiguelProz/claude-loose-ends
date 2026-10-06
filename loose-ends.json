@@ -198,6 +198,18 @@
       "updatedAt": "2026-10-06T21:44:28.645Z",
       "status": "rejected",
       "closedAt": "2026-10-06T21:44:28.645Z"
+    },
+    {
+      "id": "e355fd0a",
+      "text": "Añadir aviso visual o permitir que «Hacer» espere y lance la acción después de que termine el turno de Claude, en lugar de ignorar silenciosamente los clics mientras hay un turno en marcha",
+      "category": "mejora",
+      "priority": "medium",
+      "source": "sweep",
+      "evidence": "Mientras hay un turno en marcha, «Hacer» no hace nada a propósito y se ve apagado, pero no avisa. Si es eso, lo arreglo para que avise o para que espere a que acabe el turno y entonces lo lance.",
+      "branch": "master",
+      "createdAt": "2026-10-06T21:49:17.470Z",
+      "updatedAt": "2026-10-06T21:49:17.470Z",
+      "status": "candidate"
     }
   ]
 }
