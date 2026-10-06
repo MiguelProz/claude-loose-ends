@@ -4,7 +4,7 @@ import {
 } from '../lib/refstore.mjs'
 import {
   LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
-  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
+  markDone, parseItems, propose, proposeClose, prune, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
 } from '../lib/items.mjs'
 import { rejectReason } from '../lib/filter.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
@@ -113,11 +113,13 @@ async function writeRef($, root, list, prev) {
 // Read-modify-write of a repo's loose ends, again from the top when another session moved the ref in between.
 // `fn` may run more than once, so it must not have side effects beyond what it returns.
 async function commitItems($, root, fn) {
+  const now = await $.clock.now()
   for (let tries = 0; tries < MAX_TRIES; tries++) {
     const read = await readRef($, root)
     if (!read.ok) return { error: read.error }
     const result = fn(read.items)
-    const nextItems = Array.isArray(result) ? result : result.items
+    // every write also drops what the ref no longer keeps (old closed items, rejected beyond the newest 50)
+    const nextItems = prune(Array.isArray(result) ? result : result.items, now)
     if (serializeItems(nextItems) === serializeItems(read.items)) return { result, items: read.items, written: false }
     if (await writeRef($, root, nextItems, read.sha)) return { result, items: nextItems, written: true }
   }

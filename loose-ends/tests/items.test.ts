@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
   CATEGORIES, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
-  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap,
+  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap, prune, CLOSED_RETENTION_MS, REJECTED_KEEP,
 } from '../lib/items.mjs'
 
 const T0 = '2026-10-04T10:00:00.000Z'
@@ -185,5 +185,36 @@ describe('snapshot and recap', () => {
   test('without a usable snapshot there is no recap', () => {
     expect(recap([], null)).toBe(null)
     expect(recap([], { at: 'x' })).toBe(null)
+  })
+})
+
+describe('prune', () => {
+  const NOW = Date.parse('2026-10-04T10:00:00.000Z')
+  const mk = (id: string, status: string, closedAt?: string) => ({ id, text: id, status, priority: 'medium', createdAt: '2026-08-01T00:00:00.000Z', ...(closedAt ? { closedAt } : {}) })
+  test('closed, dismissed and expired items go 30 days after closing; live ones and candidates stay', () => {
+    expect(CLOSED_RETENTION_MS).toBe(30 * 24 * 60 * 60 * 1000)
+    const items = [
+      mk('old-done', 'done', '2026-09-04T09:59:59.000Z'),
+      mk('edge-done', 'done', '2026-09-04T10:00:00.000Z'),
+      mk('old-dismissed', 'dismissed', '2026-08-01T00:00:00.000Z'),
+      mk('old-expired', 'expired', '2026-08-01T00:00:00.000Z'),
+      mk('open', 'open'),
+      mk('doing', 'doing'),
+      mk('candidate', 'candidate'),
+    ]
+    expect(prune(items, NOW).map(i => i.id)).toEqual(['edge-done', 'open', 'doing', 'candidate'])
+  })
+  test('only the 50 newest rejected stay, whatever their age', () => {
+    expect(REJECTED_KEEP).toBe(50)
+    const rejected = Array.from({ length: 52 }, (_, k) => mk(`r${k}`, 'rejected', new Date(Date.parse('2026-01-01T00:00:00.000Z') + k * 60000).toISOString()))
+    expect(prune(rejected, NOW).map(i => i.id)).toEqual(rejected.slice(2).map(i => i.id))
+  })
+  test('a closed item without a readable closedAt is kept', () => {
+    const items = [mk('no-date', 'done'), { ...mk('bad-date', 'dismissed'), closedAt: 'ayer' }]
+    expect(prune(items, NOW).map(i => i.id)).toEqual(['no-date', 'bad-date'])
+  })
+  test('the same array comes back when nothing goes', () => {
+    const items = [mk('open', 'open'), mk('done', 'done', '2026-10-03T00:00:00.000Z')]
+    expect(prune(items, NOW)).toBe(items)
   })
 })

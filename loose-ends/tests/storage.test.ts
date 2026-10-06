@@ -58,3 +58,13 @@ test('an unreadable blob is never overwritten', async ($, on) => {
   expect(w.refText(ROOT)).toBe('{ roto')
   expect(w.writes).toEqual([])
 })
+
+test('a write leaves out closed items older than 30 days', async ($, on) => {
+  const old = { ...item('d1', 'Cerrado hace mucho'), status: 'done', closedAt: '2026-08-01T00:00:00.000Z' }
+  const recent = { ...item('d2', 'Cerrado ayer'), status: 'done', closedAt: '2026-10-03T00:00:00.000Z' }
+  const w = world(on, {}, { refs: { [ROOT]: blob(old, recent, item('a1', 'Abierto')) } })
+  await w.start($)
+  await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo nuevo para escribir', priority: 'low' })
+  expect(w.saved().map((i: any) => i.id).filter((id: string) => id.length === 2)).toEqual(['d2', 'a1'])
+  expect(w.saved().some((i: any) => i.text === 'Cabo nuevo para escribir')).toBe(true)
+})

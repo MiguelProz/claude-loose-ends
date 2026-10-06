@@ -6,6 +6,9 @@ const DAY = 24 * 60 * 60 * 1000
 export const CANDIDATE_TTL_MS = 7 * DAY
 export const STALE_MS = 14 * DAY
 export const CLOSED_WINDOW_MS = 7 * DAY
+// How long the ref keeps a closed item, and how many rejected it keeps (the filter compares against the last 50).
+export const CLOSED_RETENTION_MS = 30 * DAY
+export const REJECTED_KEEP = 50
 // Where a 0.3 version kept the items, inside the working tree; only the import reads it.
 export const LEGACY_FILE = '.claude/loose-ends.json'
 const LIVE = new Set(['open', 'doing'])
@@ -184,4 +187,21 @@ export function recap(items, seen) {
     fresh: items.filter(i => !known.has(i.id) && (i.status === 'candidate' || LIVE.has(i.status))).length,
     closed: items.filter(i => wasLive.has(i.id) && (i.status === 'done' || i.status === 'dismissed')).length,
   }
+}
+
+const GONE_AFTER_RETENTION = new Set(['done', 'dismissed', 'expired'])
+
+// What the ref keeps, so its one blob never grows without end: closed, dismissed and expired items until 30 days
+// after closing, and the 50 newest rejected. Every machine applies the same rule, so a merge that brings a pruned
+// item back loses it again on the next write. The same array when nothing goes.
+export function prune(items, now) {
+  const rejected = items.filter(i => i.status === 'rejected').sort((a, b) => msOf(b.closedAt) - msOf(a.closedAt))
+  const keptRejected = new Set(rejected.slice(0, REJECTED_KEEP).map(i => i.id))
+  const kept = items.filter(i => {
+    if (i.status === 'rejected') return keptRejected.has(i.id)
+    if (!GONE_AFTER_RETENTION.has(i.status)) return true
+    const closed = Date.parse(i.closedAt)
+    return !Number.isFinite(closed) || now - closed <= CLOSED_RETENTION_MS
+  })
+  return kept.length === items.length ? items : kept
 }
