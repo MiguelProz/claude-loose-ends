@@ -178,8 +178,13 @@
       "evidence": "El plan antiguo sigue con fragmentos viejos, pero es un documento histórico.",
       "branch": "banda-0.4.4",
       "createdAt": "2026-10-06T21:41:07.569Z",
-      "updatedAt": "2026-10-06T21:43:40.207Z",
-      "status": "doing"
+      "updatedAt": "2026-10-06T21:44:24.286Z",
+      "status": "doing",
+      "proposal": {
+        "quote": "He puesto al día el plan [docs/plans/2026-10-06-banda-tarjeta-viva.md](docs/plans/2026-10-06-banda-tarjeta-viva.md), en el commit 6cf1273.",
+        "commit": "6cf1273",
+        "at": "2026-10-06T21:44:24.286Z"
+      }
     },
     {
       "id": "860a6532",
