@@ -716,6 +716,10 @@ function itemActions($) {
     keepFresh: id => background($, act($, id, touch), 'mantener el cabo'),
     add: text => background($, addByHand($, text), 'apuntar un cabo'),
     push: () => background($, pushRemote($, sessionRepo), 'subir los cabos'),
+    dismissNotice: () => {
+      notice = null
+      $.ui.invalidate('ui.render')
+    },
   }
 }
 

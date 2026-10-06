@@ -122,6 +122,20 @@ describe('triage card', () => {
     byKey(root, 'tri-keep-c1').props.onPress()
     expect(calls).toEqual(['confirm c1', 'keep c1'])
   })
+  test('a card like the one in the pane: the candidate with the accent border, the proposal with the success one; rows wrap without holes; an answer has no border', () => {
+    const wrapRows = (root: any) => flat(root).filter(n => n?.type === 'Box' && n.props.flexWrap === 'wrap')
+    const candidate = renderTriage(fake, 'desktop', card(), actions)
+    expect(candidate.props).toMatchObject({ borderStyle: 'round', borderColor: 'claude', paddingX: 1 })
+    const proposed = item({ status: 'open', proposal: { quote: 'q', at: '2026-10-04T10:00:00.000Z' } })
+    const proposal = renderTriage(fake, 'desktop', card({ kind: 'proposal', item: proposed, quote: 'q' }), actions)
+    expect(proposal.props).toMatchObject({ borderStyle: 'round', borderColor: 'success', paddingX: 1 })
+    for (const root of [candidate, proposal]) {
+      expect(wrapRows(root).length).toBe(1)
+      expect(wrapRows(root)[0].props).toMatchObject({ columnGap: 1 })
+      expect(wrapRows(root)[0].props.gap).toBeUndefined()
+    }
+    expect(renderTriage(fake, 'desktop', card({ state: 'saved' }), actions).props.borderStyle).toBeUndefined()
+  })
   test('an answered card is one dim line with Deshacer', () => {
     calls.length = 0
     const said = (state: string, over = {}) => texts(renderTriage(fake, 'desktop', card({ state, ...over }), actions))[0]
@@ -139,7 +153,7 @@ describe('pane', () => {
   const NOW = Date.parse('2026-10-04T10:00:00.000Z')
   const calls: string[] = []
   const rec = (name: string) => (...args: any[]) => calls.push([name, ...args].join(' '))
-  const actions = Object.fromEntries(['save', 'reject', 'doNow', 'done', 'dismiss', 'reopen', 'cyclePriority', 'keepFresh', 'confirm', 'keep', 'startEdit', 'saveEdited', 'add', 'push'].map(n => [n, rec(n)])) as any
+  const actions = Object.fromEntries(['save', 'reject', 'doNow', 'done', 'dismiss', 'reopen', 'cyclePriority', 'keepFresh', 'confirm', 'keep', 'startEdit', 'saveEdited', 'add', 'push', 'dismissNotice'].map(n => [n, rec(n)])) as any
   const live = (over = {}) => ({ ...item({ id: 'o1', status: 'open', text: 'Arreglar el envío duplicado de correo', category: 'bug', file: 'lib/facturas.ts', branch: 'main', createdAt: '2026-10-04T09:48:00.000Z' }), stale: false, ...over })
   const model = (over = {}) => ({
     now: NOW, branch: 'main', working: false, fileError: null, noRepo: false, repoName: 'web-app', repoPath: '/Users/m/web-app', notice: null, sync: 'synced', editing: null,
@@ -147,8 +161,18 @@ describe('pane', () => {
   })
   const pane = (over = {}, surface = 'desktop') => renderPane(fake, surface, model(over), actions)
 
-  test('header: Cuaderno, the repo and where the ref stands', () => {
-    expect(texts(pane())).toEqual(expect.arrayContaining(['Cuaderno', 'web-app', 'Al día con origin']))
+  const dotBefore = (root: any, label: string) => {
+    const row = flat(root).find(n => n?.type === 'Box' && [].concat(n.props.children ?? []).some((c: any) => c?.props?.children === label))
+    return [].concat(row.props.children).find((c: any) => c?.props?.children === '●') as any
+  }
+
+  test('header: the repo in bold (the pane title already says Cuaderno), a colored dot and where the ref stands', () => {
+    expect(texts(pane())).toEqual(expect.arrayContaining(['web-app', 'Al día con origin']))
+    expect(texts(pane())).not.toContain('Cuaderno')
+    expect(dotBefore(pane(), 'Al día con origin').props.color).toBe('success')
+    expect(dotBefore(pane({ sync: 'local' }), 'Solo en este ordenador').props.dimColor).toBe(true)
+    expect(dotBefore(pane({ sync: 'ahead' }), 'Cambios sin subir').props.color).toBe('warning')
+    expect(dotBefore(pane({ sync: 'failed' }), 'No se pudieron subir a origin').props.color).toBe('error')
     expect(texts(pane({ sync: 'local' }))).toContain('Solo en este ordenador')
     expect(texts(pane({ sync: 'ahead' }))).toContain('Cambios sin subir')
     expect(texts(pane({ sync: 'failed' }))).toContain('No se pudieron subir a origin')
@@ -168,8 +192,26 @@ describe('pane', () => {
   test('sections: bold title and dim count; Por revisar only when there is something', () => {
     const root = pane({ closed: [item({ id: 'd1', status: 'done', text: 'Hecho ayer', closedAt: '2026-10-03T10:00:00.000Z' })] })
     const headings = flat(root).filter(n => n?.type === 'Text' && n.props.bold).map(n => n.props.children)
-    expect(headings).toEqual(['Cuaderno', 'Por revisar', 'Abiertos', 'Cerrados esta semana'])
+    expect(headings).toEqual(['web-app', 'Por revisar', 'Abiertos', 'Cerrados esta semana'])
     expect(flat(pane({ waiting: [] })).filter(n => n?.type === 'Text' && n.props.bold).map(n => n.props.children)).not.toContain('Por revisar')
+  })
+  test('every item is a card: a candidate with the accent border, an open item with the quiet one', () => {
+    const root = pane()
+    expect(byKey(root, 'cand-c1').props).toMatchObject({ borderStyle: 'round', borderColor: 'claude', paddingX: 1 })
+    expect(byKey(root, 'item-o1').props).toMatchObject({ borderStyle: 'round', borderColor: 'promptBorder', paddingX: 1 })
+  })
+  test('rows that wrap keep their lines together: a gap between items, none between lines; meta and controls apart', () => {
+    const card = byKey(pane(), 'item-o1')
+    const wrapping = flat(card).filter(n => n?.type === 'Box' && n.props.flexWrap === 'wrap')
+    expect(wrapping.length).toBeGreaterThan(0)
+    for (const row of wrapping) {
+      expect(row.props.columnGap).toBe(1)
+      expect(row.props.gap).toBeUndefined()
+    }
+    const rowOf = (key: string) => wrapping.find(r => [].concat(r.props.children).some((c: any) => c?.props?.key === key))
+    expect(rowOf('prio-o1')).toBe(rowOf('now-o1'))
+    expect(rowOf('edit-o1')).toBe(rowOf('now-o1'))
+    expect(rowOf('prio-o1')).not.toBe(wrapping.find(r => [].concat(r.props.children).some((c: any) => c?.props?.children === 'bug · hace 12 min')))
   })
   test('a candidate: text, dim meta, its quote, Guardar and No es un cabo', () => {
     calls.length = 0
@@ -182,18 +224,20 @@ describe('pane', () => {
   test('an open item: colored dot, text, a priority word that cycles, meta, Hacer, Hecho, Descartar', () => {
     calls.length = 0
     const root = pane()
-    expect(flat(root).find(n => n?.type === 'Text' && n.props.children === '●')?.props.color).toBe('warning')
+    expect(flat(byKey(root, 'item-o1')).find(n => n?.type === 'Text' && n.props.children === '●')?.props.color).toBe('warning')
     expect(byKey(root, 'prio-o1').props).toMatchObject({ label: 'normal', plain: true, dimColor: true })
-    expect(texts(root)).toContain('bug · hace 12 min · lib/facturas.ts')
+    expect(texts(root)).toContain('bug · hace 12 min')
+    expect(flat(root).find(n => n?.type === 'Text' && n.props.children === ' lib/facturas.ts ')?.props).toMatchObject({ backgroundColor: 'userMessageBackground' })
     for (const key of ['prio-o1', 'now-o1', 'done-o1', 'dismiss-o1', 'edit-o1']) byKey(root, key).props.onPress()
     expect(calls).toEqual(['cyclePriority o1', 'doNow o1', 'done o1', 'dismiss o1', 'startEdit o1'])
     expect(byKey(root, 'now-o1').props).toMatchObject({ label: 'Hacer', variant: 'primary', dimColor: false })
     expect(byKey(pane({ working: true }), 'now-o1').props.dimColor).toBe(true)
   })
   test('the dot follows the priority; meta says where it was born, and en curso', () => {
-    expect(flat(pane({ live: [live({ priority: 'high' })] })).find(n => n?.props?.children === '●')?.props.color).toBe('error')
-    expect(flat(pane({ live: [live({ priority: 'low' })] })).find(n => n?.props?.children === '●')?.props.dimColor).toBe(true)
-    expect(texts(pane({ live: [live({ branch: 'fix/qa', status: 'doing' })] }))).toContain('bug · hace 12 min · lib/facturas.ts · nació en fix/qa · en curso')
+    expect(flat(byKey(pane({ live: [live({ priority: 'high' })] }), 'item-o1')).find(n => n?.props?.children === '●')?.props.color).toBe('error')
+    expect(flat(byKey(pane({ live: [live({ priority: 'low' })] }), 'item-o1')).find(n => n?.props?.children === '●')?.props.dimColor).toBe(true)
+    expect(texts(pane({ live: [live({ branch: 'fix/qa', status: 'doing' })] }))).toContain('bug · hace 12 min · nació en fix/qa · en curso')
+    expect(flat(pane({ live: [live({ file: undefined })] })).some(n => n?.props?.backgroundColor)).toBe(false)
   })
   test('editing swaps the text for an Input, not on mobile', () => {
     calls.length = 0
@@ -220,14 +264,18 @@ describe('pane', () => {
     expect(calls).toEqual(['keepFresh o1'])
     expect(byKey(pane(), 'fresh-o1')).toBeUndefined()
   })
-  test('closed this week: done with its proof, dismissed struck through, ↺ reopens', () => {
+  test('closed this week: one line each, a green check, the text cut to fit, its proof, dismissed struck through, ↺ reopens', () => {
     calls.length = 0
     const root = pane({ closed: [
       item({ id: 'd1', status: 'done', text: 'Hojas de globals.css', proof: { quote: 'q', commit: '9e1b7c2' }, closedAt: '2026-10-04T08:00:00.000Z' }),
       item({ id: 'd2', status: 'dismissed', text: 'Ya no aplica', closedAt: '2026-10-04T08:00:00.000Z' }),
     ] })
-    expect(texts(root)).toEqual(expect.arrayContaining(['✓ Hojas de globals.css · 9e1b7c2', '✓ Ya no aplica']))
-    expect(flat(root).find(n => n?.props?.children === '✓ Ya no aplica')?.props.strikethrough).toBe(true)
+    const done = byKey(root, 'closed-d1')
+    expect(done.props.flexDirection).toBe('row')
+    expect(flat(done).find(n => n?.props?.children === '✓')?.props.color).toBe('success')
+    expect(flat(done).find(n => n?.props?.children === 'Hojas de globals.css')?.props.wrap).toBe('truncate-end')
+    expect(flat(done).find(n => n?.props?.children === '9e1b7c2')?.props.dimColor).toBe(true)
+    expect(flat(root).find(n => n?.props?.children === 'Ya no aplica')?.props).toMatchObject({ strikethrough: true, dimColor: true, wrap: 'truncate-end' })
     byKey(root, 'reopen-d1').props.onPress()
     expect(calls).toEqual(['reopen d1'])
   })
@@ -236,7 +284,12 @@ describe('pane', () => {
     expect(texts(pane({ fileError: 'json' })).some(t => t.includes('No puedo leer los cabos de /Users/m/web-app (refs/loose-ends): json'))).toBe(true)
     const outside = pane({ noRepo: true })
     expect(texts(outside)).toEqual(['Esta sesión no está dentro de un repo git.'])
-    expect(texts(pane({ notice: 'Importados 3 cabos de .claude/loose-ends.json. Ya puedes borrar el fichero del repo.' }))).toContain('Importados 3 cabos de .claude/loose-ends.json. Ya puedes borrar el fichero del repo.')
+    const noticed = pane({ notice: 'Importados 3 cabos de .claude/loose-ends.json. Ya puedes borrar el fichero del repo.' })
+    expect(texts(noticed)).toContain('Importados 3 cabos de .claude/loose-ends.json. Ya puedes borrar el fichero del repo.')
+    calls.length = 0
+    byKey(noticed, 'notice-ok').props.onPress()
+    expect(calls).toEqual(['dismissNotice'])
+    expect(byKey(pane(), 'notice-ok')).toBeUndefined()
     expect(texts(pane({ learned: 9 }))).toContain('El barrido aprende de 9 descartes tuyos')
     expect(texts(pane({ learned: 1 }))).toContain('El barrido aprende de 1 descarte tuyo')
     expect(texts(pane()).some(t => t.startsWith('El barrido aprende'))).toBe(false)

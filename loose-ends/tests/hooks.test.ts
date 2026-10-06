@@ -452,7 +452,7 @@ test('pane: a write after Subir shows the changes as unpushed again', async ($, 
   await ui.unmount()
 })
 
-test('pane: the import notice shows after the 0.3 file was imported', async ($, on) => {
+test('pane: the import notice shows after the 0.3 file was imported, until Entendido', async ($, on) => {
   const w = world(on, { '/proj/.claude/loose-ends.json': JSON.stringify({ version: 1, items: [it('q1', 'Docs de jsonld', { status: 'queued', remindedAt: T0 })] }) })
   drawEngine(on)
   await w.start($)
@@ -460,6 +460,9 @@ test('pane: the import notice shows after the 0.3 file was imported', async ($, 
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: 'Importados 1 cabo de .claude/loose-ends.json. Ya puedes borrar el fichero del repo.' })).toBeDefined()
   expect(await ui.find({ key: 'now-q1' })).toBeDefined()
+  await ui.press({ key: 'notice-ok' })
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /^Importados/ })).toBeUndefined()
   await ui.unmount()
 })
 
