@@ -4,7 +4,7 @@ import {
 } from '../lib/refstore.mjs'
 import {
   LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
-  markDone, parseItems, propose, proposeClose, prune, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
+  markDone, nextItem, parseItems, propose, proposeClose, prune, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
 } from '../lib/items.mjs'
 import { rejectReason } from '../lib/filter.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
@@ -571,6 +571,9 @@ function bandModel(now) {
     justClosed: justClosed && now < justClosed.until ? justClosed : null,
     recap: recapNow,
     fileError,
+    next: nextItem(items),
+    sync,
+    working,
   }
 }
 
@@ -874,6 +877,9 @@ export function register(on) {
       },
       undoClose: () => {
         background($, undoClosed($), 'deshacer el cierre')
+      },
+      doNow: id => {
+        background($, doNow($, id), 'Hacer')
       },
     })
   })

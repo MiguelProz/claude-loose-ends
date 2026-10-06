@@ -31,8 +31,8 @@ test('a note with repo goes to that repo, not to the session file', async ($, on
   expect(w.refText(ROOT)).toBe(own)
   expect(w.writes).toEqual([OTHER])
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
-  expect(await band.find({ type: 'Text', text: '1 abierto' })).toBeDefined()
-  expect((await band.find({ key: 'band-line' }))?.text).toBe('[Ver](file:///loose-ends/ver)')
+  expect(await band.find({ type: 'Text', text: 'Cabo de la sesión' })).toBeDefined()
+  expect((await band.find({ key: 'band-line' }))?.text).toBe('[Cuaderno](file:///loose-ends/ver)')
   await band.unmount()
 })
 
@@ -393,8 +393,8 @@ test('after the root moves, a note to the new session repo is a session note', a
   await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo en la nueva raíz', priority: 'low', repo: '/other' })
   expect(w.savedAt(OTHER)).toHaveLength(1)
   const band = await $.ui.mount({ plugin: 'loose-ends', surface: 'desktop', ...BAND })
-  expect(await band.find({ type: 'Text', text: '1 por revisar' })).toBeDefined()
-  expect((await band.find({ key: 'band-line' }))?.text).toBe('[Revisar](file:///loose-ends/ver)')
+  expect(await band.find({ type: 'Text', text: '1 cabo espera tu visto bueno' })).toBeDefined()
+  expect((await band.find({ key: 'band-act' }))?.props.label).toBe('Revisar')
   await band.unmount()
 })
 

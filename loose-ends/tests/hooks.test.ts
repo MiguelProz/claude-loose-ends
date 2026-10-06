@@ -512,9 +512,9 @@ test('band: candidates make Chispa hold a note and the line asks to review', asy
   await w.start($)
   const desk = await band($)
   expect(await desk.find({ type: 'Svg' })).toBeDefined()
-  expect(await desk.find({ type: 'Text', text: '1 por revisar' })).toBeDefined()
-  expect(await desk.find({ type: 'Text', text: '· 1 abierto' })).toBeDefined()
-  expect((await desk.find({ key: 'band-line' }))?.text).toBe('[Revisar](file:///loose-ends/ver)')
+  expect(await desk.find({ type: 'Text', text: '1 cabo espera tu visto bueno' })).toBeDefined()
+  expect((await desk.find({ key: 'band-act' }))?.props.label).toBe('Revisar')
+  expect(await desk.find({ key: 'band-line' })).toBeUndefined()
   await desk.unmount()
   const term = await band($, 'terminal')
   expect(await term.find({ type: 'Text', text: '(•ᴗ•)✎' })).toBeDefined()
@@ -522,6 +522,22 @@ test('band: candidates make Chispa hold a note and the line asks to review', asy
   await w.clock.settle()
   expect(opened).toBe('loose-ends')
   await term.unmount()
+})
+
+test('band: Hacer on the desktop starts the next loose end and sends its prompt', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el login', { priority: 'high' }), it('a2', 'Tipar drafts')) } })
+  drawEngine(on)
+  let sent = ''
+  on('prompt.submit', ($: any, e: any) => { sent = e.text; return { text: e.text } })
+  await w.start($)
+  const desk = await band($)
+  expect(await desk.find({ type: 'Text', text: 'Arreglar el login' })).toBeDefined()
+  expect(await desk.find({ type: 'Text', text: 'Urgente' })).toBeDefined()
+  await desk.press({ key: 'band-act' })
+  await w.clock.settle()
+  expect(sent).toBe('Resuelve este cabo suelto (a1): Arreglar el login')
+  expect(find(w, 'a1').status).toBe('doing')
+  await desk.unmount()
 })
 
 test('band: an urgent item is named and worries Chispa', async ($, on) => {
