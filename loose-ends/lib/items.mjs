@@ -137,7 +137,10 @@ export function expireCandidates(items, now) {
   return items.map(i => (i.status === 'candidate' && at - created(i) >= CANDIDATE_TTL_MS ? { ...i, status: 'expired', closedAt: now, updatedAt: now } : i))
 }
 
-const byPriority = (a, b) => (RANK[a.priority] ?? 1) - (RANK[b.priority] ?? 1) || created(a) - created(b)
+// An item's priority as the lists read it: one they do not know counts as medium.
+const priorityOf = item => (Object.hasOwn(RANK, item.priority) ? item.priority : 'medium')
+const byRank = (a, b) => RANK[priorityOf(a)] - RANK[priorityOf(b)]
+const byPriority = (a, b) => byRank(a, b) || created(a) - created(b)
 
 export const candidates = items => items.filter(i => i.status === 'candidate').sort((a, b) => created(a) - created(b))
 export const live = items => items.filter(i => LIVE.has(i.status)).sort(byPriority)
@@ -159,7 +162,7 @@ export function rejectedTexts(items, max = 20) {
 
 export function counts(items) {
   const open = live(items)
-  const of = priority => open.filter(i => i.priority === priority).length
+  const of = priority => open.filter(i => priorityOf(i) === priority).length
   return { candidates: candidates(items).length, live: open.length, high: of('high'), medium: of('medium'), low: of('low') }
 }
 
@@ -168,9 +171,8 @@ export const topUrgent = items => live(items).find(i => i.priority === 'high') ?
 // The item the band names next: the most urgent live one; at the same priority the one in progress, then the oldest.
 const doingFirst = (a, b) => (a.status === 'doing' ? 0 : 1) - (b.status === 'doing' ? 0 : 1)
 export function nextItem(items) {
-  const open = items.filter(i => LIVE.has(i.status))
-  open.sort((a, b) => (RANK[a.priority] ?? 1) - (RANK[b.priority] ?? 1) || doingFirst(a, b) || created(a) - created(b))
-  return open[0] ?? null
+  // live() is already by priority then age, and sort is stable: moving the doing ones up keeps the oldest first
+  return live(items).sort((a, b) => byRank(a, b) || doingFirst(a, b))[0] ?? null
 }
 
 // The urgent item the prompt may propose: one still open (not started) with no closure waiting, and only while no

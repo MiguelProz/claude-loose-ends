@@ -151,6 +151,15 @@ describe('queries', () => {
     expect(nextItem(start(items, 'm2', T1))?.id).toBe('m2')
     expect(nextItem(propose([], input({ id: 'c9' })).items)).toBe(null)
   })
+  test('the next item: two in progress at the same priority, the oldest; an unknown priority ranks and counts as medium', () => {
+    let items = save(propose([], input({ id: 'm1', text: 'Antiguo', now: '2026-10-01T00:00:00.000Z' })).items, 'm1', T0)
+    items = save(propose(items, input({ id: 'm2', text: 'Nuevo', now: '2026-10-03T00:00:00.000Z' })).items, 'm2', T0)
+    expect(nextItem(start(start(items, 'm2', T1), 'm1', T1))?.id).toBe('m1')
+    const odd = { id: 'x1', text: 'Prioridad rara', priority: 'urgentisima', status: 'open', createdAt: '2026-09-01T00:00:00.000Z', updatedAt: T0 }
+    const low = { ...odd, id: 'l1', priority: 'low', createdAt: '2026-08-01T00:00:00.000Z' }
+    expect(nextItem([low, odd])?.id).toBe('x1')
+    expect(counts([low, odd])).toEqual({ candidates: 0, live: 2, high: 0, medium: 1, low: 1 })
+  })
   test('the prompt suggests only an urgent item still open, without a proposed closure, and only while no candidate waits', () => {
     const urgent = (over = {}) => save(propose([], input({ id: 'h1', text: 'Urgente', priority: 'high', ...over })).items, 'h1', T0)
     expect(suggestable(urgent())?.id).toBe('h1')
