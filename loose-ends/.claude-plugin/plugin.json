@@ -1,6 +1,6 @@
 {
   "name": "loose-ends",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Propone los cabos sueltos que Claude deja sin hacer y tú decides cuáles se guardan, los guarda en refs/loose-ends sin ensuciar git, y Chispa avisa de lo que pide tu atención.",
   "author": { "name": "Miguel Ángel Pérez García" }
 }
