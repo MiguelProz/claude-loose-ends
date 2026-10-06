@@ -208,13 +208,13 @@
       "evidence": "Mientras hay un turno en marcha, «Hacer» no hace nada a propósito y se ve apagado, pero no avisa. Si es eso, lo arreglo para que avise o para que espere a que acabe el turno y entonces lo lance.",
       "branch": "master",
       "createdAt": "2026-10-06T21:49:17.470Z",
-      "updatedAt": "2026-10-06T21:51:35.279Z",
-      "status": "doing",
-      "proposal": {
+      "updatedAt": "2026-10-06T21:51:39.120Z",
+      "status": "done",
+      "proof": {
         "quote": "si pulsas «Hacer» mientras Claude está respondiendo, ya no se pierde el clic. Pasan los 280 tests y validate --strict",
-        "commit": "2c47e9a",
-        "at": "2026-10-06T21:51:35.279Z"
-      }
+        "commit": "2c47e9a"
+      },
+      "closedAt": "2026-10-06T21:51:39.120Z"
     }
   ]
 }
