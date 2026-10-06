@@ -144,6 +144,18 @@ describe('band', () => {
     expect(texts(byKey(tricky, 'band-top'))).toContain('[Pulsa](https://x.y) *ya*')
     expect(flat(tricky).filter(n => n?.type === 'Markdown').map(n => n.props.text)).toEqual([`[Cuaderno](${OPEN_PANE_HREF})`])
   })
+  test('desktop: an unreadable ref offers only the Ver link; Revisar stays lit while a turn runs', () => {
+    const warn = renderBand(fake, 'desktop', band({ fileError: 'json', counts: counts({ live: 1, medium: 1 }), next: next() }), acts)
+    expect(byKey(warn, 'band-act')).toBeUndefined()
+    expect(byKey(warn, 'band-line').props.text).toBe(`[Ver](${OPEN_PANE_HREF})`)
+    const review = renderBand(fake, 'desktop', band({ counts: counts({ candidates: 1 }), working: true }), acts)
+    expect(byKey(review, 'band-act').props).toMatchObject({ label: 'Revisar', dimColor: false })
+  })
+  test('desktop: to review wins over just closed and since last time; just closed wins over since last time', () => {
+    const recap = { since: 'ayer', fresh: 1, closed: 0 }
+    expect(bandCard(band({ counts: counts({ candidates: 1, live: 1, medium: 1 }), justClosed: { text: 'Hecho' }, recap, next: next() }))?.border).toBe('claude')
+    expect(bandCard(band({ counts: counts({ live: 1, medium: 1 }), justClosed: { text: 'Hecho' }, recap, next: next() }))?.border).toBe('success')
+  })
   test('desktop: with nothing to say the band is only Chispa, without a card', () => {
     const root = renderBand(fake, 'desktop', band(), acts)
     expect(root.props.children).toHaveLength(1)

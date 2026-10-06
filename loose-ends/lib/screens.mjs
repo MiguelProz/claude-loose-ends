@@ -34,11 +34,7 @@ export function bandLine(m) {
 }
 
 const SYNC_WORDS = { synced: 'subido a origin', ahead: 'sin subir', failed: 'no se pudo subir', local: 'solo en este ordenador' }
-const PRIORITY_COUNT = [
-  ['high', 'urgente', 'urgentes'],
-  ['medium', 'normal', 'normales'],
-  ['low', 'baja', 'bajas'],
-]
+const PRIORITY_PLURAL = { high: 'urgentes', medium: 'normales', low: 'bajas' }
 
 // What the desktop band says: a border color, the top line, the dim segments under it, the button and the link.
 // The first that applies: unreadable, to review, just closed, since last time, the next loose end; nothing open, null.
@@ -65,7 +61,9 @@ export function bandCard(m) {
   }
   if (!next) return null
   const label = next.status === 'doing' ? 'En curso' : next.priority === 'high' ? 'Urgente' : 'Siguiente'
-  const byPriority = PRIORITY_COUNT.filter(([p]) => m.counts[p]).map(([p, one, many]) => ({ text: plural(m.counts[p], one, many), priority: p }))
+  const byPriority = Object.keys(PRIORITY_PLURAL)
+    .filter(p => m.counts[p])
+    .map(p => ({ text: plural(m.counts[p], PRIORITY_WORD[p], PRIORITY_PLURAL[p]), priority: p }))
   return {
     border: nextBorder,
     top: { text: clip(next.text, 120), priority: next.priority, ...(next.file ? { file: next.file } : {}) },
@@ -78,7 +76,7 @@ export function bandCard(m) {
 // The top line of the card: the priority dot, the text cut to fit, and the file, dim.
 function cardTop(el, top) {
   const parts = []
-  if (top.priority) parts.push(el.Text({ ...(DOT[top.priority] ?? DOT.medium), children: '●' }))
+  if (top.priority) parts.push(dot(el, top.priority))
   parts.push(el.Box({ flexShrink: 1, minWidth: 0, children: [el.Text({ wrap: 'truncate-end', ...(top.color ? { color: top.color } : {}), children: top.text })] }))
   if (top.file) parts.push(el.Text({ dimColor: true, children: top.file }))
   return el.Box({ key: 'band-top', flexDirection: 'row', gap: 1, overflow: 'hidden', children: parts })
@@ -89,16 +87,16 @@ function cardBottom(el, bottom) {
   const parts = []
   bottom.forEach((seg, i) => {
     if (i) parts.push(el.Text({ dimColor: true, children: '·' }))
-    if (seg.priority) parts.push(el.Text({ ...(DOT[seg.priority] ?? DOT.medium), children: '●' }))
+    if (seg.priority) parts.push(dot(el, seg.priority))
     parts.push(el.Text({ dimColor: true, wrap: 'truncate-end', children: seg.text }))
   })
   return el.Box({ key: 'band-bottom', flexDirection: 'row', gap: 1, overflow: 'hidden', children: parts })
 }
 
 export function renderBand(el, surface, m, actions) {
-  const line = bandLine(m)
-  const press = () => (line?.action === 'undo' ? actions.undoClose() : actions.openPane())
   if (surface === 'terminal') {
+    const line = bandLine(m)
+    const press = () => (line?.action === 'undo' ? actions.undoClose() : actions.openPane())
     const children = [el.Text({ dimColor: true, children: TERMINAL_FACES[m.mood] ?? TERMINAL_FACES.idle })]
     if (line) {
       children.push(el.Text({ dimColor: true, ...(line.warning ? { color: 'warning' } : {}), children: line.text }))
@@ -190,6 +188,7 @@ export function renderTriage(el, surface, card, actions) {
 
 // The dot of an item: low priority has no color of its own, it is only dim.
 const DOT = { high: { color: 'error' }, medium: { color: 'warning' }, low: { dimColor: true } }
+const dot = (el, priority) => el.Text({ ...(DOT[priority] ?? DOT.medium), children: '●' })
 
 export function ago(iso, now) {
   const ms = now - Date.parse(iso)
@@ -262,7 +261,7 @@ function liveRow(el, surface, item, m, actions) {
   if (editable && m.editing === id) {
     parts.push(el.Input({ key: `edit-input-${id}`, value: item.text, submitLabel: 'guardar', onSubmit: value => actions.saveEdited(id, value) }))
   } else {
-    parts.push(el.Box({ flexDirection: 'row', gap: 1, children: [el.Text({ ...(DOT[item.priority] ?? DOT.medium), children: '●' }), el.Text({ wrap: 'wrap', children: item.text })] }))
+    parts.push(el.Box({ flexDirection: 'row', gap: 1, children: [dot(el, item.priority), el.Text({ wrap: 'wrap', children: item.text })] }))
   }
   // what is said about it, then the file as a chip, the way code is set apart in the transcript
   const line = []
