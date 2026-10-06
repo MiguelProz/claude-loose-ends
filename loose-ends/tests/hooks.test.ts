@@ -540,7 +540,7 @@ test('band: Hacer on the desktop starts the next loose end and sends its prompt'
   await desk.unmount()
 })
 
-test('band: during a turn Hacer is dim and does nothing', async ($, on) => {
+test('band: during a turn Hacer is dim, says it waits, and starts the item once the turn ends', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Arreglar el login', { priority: 'high' }), it('a2', 'Tipar drafts')) } })
   drawEngine(on)
   turns(on)
@@ -554,6 +554,12 @@ test('band: during a turn Hacer is dim and does nothing', async ($, on) => {
   await w.clock.settle()
   expect(sent).toBe('')
   expect(find(w, 'a1').status).toBe('open')
+  expect(w.toasts).toEqual(['Lo empiezo cuando Claude termine: Arreglar el login'])
+  await endTurn($, 'corto')
+  await w.clock.advance(1000)
+  await w.clock.settle()
+  expect(sent).toBe('Resuelve este cabo suelto (a1): Arreglar el login')
+  expect(find(w, 'a1').status).toBe('doing')
   await desk.unmount()
 })
 

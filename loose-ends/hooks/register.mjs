@@ -35,6 +35,8 @@ let touchChain = Promise.resolve()
 const repoCache = new Map()
 let writeChain = Promise.resolve()
 let working = false
+// the item a Hacer pressed during a turn starts once that turn ends
+let queuedNow = null
 let lastActivity = 0
 let flashUntil = 0
 // The last item the person closed, as it was before, for the band's Deshacer while it lasts.
@@ -673,9 +675,13 @@ function pressNow($, id) {
 }
 
 async function doNow($, id) {
-  if (working) return
   const item = items.find(i => i.id === id)
   if (!item) return
+  if (working) {
+    queuedNow = id
+    await $.ui.toast(`Lo empiezo cuando Claude termine: ${item.text}`)
+    return
+  }
   const now = await nowIso($)
   const res = await mutate($, list => start(list, id, now))
   if (res === null) return
@@ -817,7 +823,11 @@ export function register(on) {
     const now = await nowIso($)
     await guarded($, 'refrescar los cabos tras el turno', () => mutate($, list => expireCandidates(list, now)))
     if (sessionRepo) await guarded($, 'apuntar lo visto del repo', () => recordSeen($, sessionRepo, { compare: false }))
-    if (suggestable(items)) $.clock.after(500, () => background($, suggestUrgent($), 'sugerir el cabo urgente'))
+    if (queuedNow) {
+      const id = queuedNow
+      queuedNow = null
+      $.clock.after(500, () => pressNow($, id))
+    } else if (suggestable(items)) $.clock.after(500, () => background($, suggestUrgent($), 'sugerir el cabo urgente'))
     if (e.reason === 'answer' && typeof e.answer === 'string' && e.answer.trim()) {
       if (shouldSweep(e.answer) || live(items).some(i => i.status === 'doing')) {
         const set = touched
