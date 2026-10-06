@@ -158,6 +158,18 @@
       "createdAt": "2026-10-06T21:41:07.485Z",
       "updatedAt": "2026-10-06T21:41:07.485Z",
       "status": "candidate"
+    },
+    {
+      "id": "e3d660ed",
+      "text": "Actualizar el plan antiguo que contiene fragmentos viejos",
+      "category": "deuda",
+      "priority": "low",
+      "source": "sweep",
+      "evidence": "El plan antiguo sigue con fragmentos viejos, pero es un documento histórico.",
+      "branch": "banda-0.4.4",
+      "createdAt": "2026-10-06T21:41:07.569Z",
+      "updatedAt": "2026-10-06T21:41:07.569Z",
+      "status": "candidate"
     }
   ]
 }
