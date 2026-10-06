@@ -302,7 +302,8 @@ function closedRow(el, item, actions) {
     el.Text({ ...(dismissed ? { dimColor: true } : { color: 'success' }), children: '✓' }),
     el.Box({ flexGrow: 1, flexShrink: 1, minWidth: 0, children: [el.Text({ wrap: 'truncate-end', dimColor: dismissed, strikethrough: dismissed, children: item.text })] }),
   ]
-  if (proof) parts.push(el.Text({ dimColor: true, children: proof }))
+  // the proof never shrinks, so «con prueba» stays on the row's one line
+  if (proof) parts.push(el.Box({ flexShrink: 0, children: [el.Text({ dimColor: true, children: proof })] }))
   parts.push(el.Button({ key: `reopen-${item.id}`, label: '↺', plain: true, dimColor: true, onPress: () => actions.reopen(item.id) }))
   return el.Box({ key: `closed-${item.id}`, flexDirection: 'row', gap: 1, children: parts })
 }

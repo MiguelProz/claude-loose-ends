@@ -376,6 +376,7 @@ describe('pane', () => {
     expect(flat(done).find(n => n?.props?.children === '✓')?.props.color).toBe('success')
     expect(flat(done).find(n => n?.props?.children === 'Hojas de globals.css')?.props.wrap).toBe('truncate-end')
     expect(flat(done).find(n => n?.props?.children === '9e1b7c2')?.props.dimColor).toBe(true)
+    expect(flat(done).find(n => n?.type === 'Box' && [].concat(n.props.children).some((c: any) => c?.props?.children === '9e1b7c2'))?.props.flexShrink).toBe(0)
     expect(flat(root).find(n => n?.props?.children === 'Ya no aplica')?.props).toMatchObject({ strikethrough: true, dimColor: true, wrap: 'truncate-end' })
     byKey(root, 'reopen-d1').props.onPress()
     expect(calls).toEqual(['reopen d1'])
