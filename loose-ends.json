@@ -134,6 +134,18 @@
         "quote": "Tarjeta con fondo algo más claro que el resto, como el chip del fichero en el Cuaderno."
       },
       "closedAt": "2026-10-06T12:28:28.458Z"
+    },
+    {
+      "id": "2b09b59d",
+      "text": "Resolver ocho detalles menores pendientes de la revisión final (tests extra y código repetido)",
+      "category": "deuda",
+      "priority": "low",
+      "source": "sweep",
+      "evidence": "Ocho detalles menores que la revisión final dejó a propósito para más adelante (por ejemplo, unos tests extra o un poco de código repetido)",
+      "branch": "banda-0.4.4",
+      "createdAt": "2026-10-06T21:37:00.522Z",
+      "updatedAt": "2026-10-06T21:37:00.522Z",
+      "status": "candidate"
     }
   ]
 }
