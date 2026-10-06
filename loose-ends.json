@@ -1,0 +1,64 @@
+{
+  "version": 2,
+  "items": [
+    {
+      "id": "615da515",
+      "text": "Añadir --no-verify al git push en segundo plano de refs/loose-ends/items (pushArgs) para que no ejecute los hooks pre-push del repo (husky, tests) y no caduque a los 30 s",
+      "priority": "medium",
+      "status": "done",
+      "source": "tool",
+      "evidence": "el push en segundo plano ejecuta los hooks pre-push del repo y puede caducar",
+      "branch": "rediseno-0.4",
+      "createdAt": "2026-10-05T23:24:36.376Z",
+      "closedAt": "2026-10-06T07:33:09.000Z",
+      "updatedAt": "2026-10-06T07:33:09.000Z"
+    },
+    {
+      "id": "e2263ce1",
+      "text": "Si git fetch o git push caducan, $.process.run rechaza y pushRemote no pone sync = 'failed': capturar el rechazo y mostrar «No se pudieron subir a origin»",
+      "priority": "medium",
+      "status": "done",
+      "source": "tool",
+      "evidence": "un fetch o push que caduca deja el estado sin marcar como fallido",
+      "branch": "rediseno-0.4",
+      "createdAt": "2026-10-05T23:24:37.703Z",
+      "closedAt": "2026-10-06T07:33:09.000Z",
+      "updatedAt": "2026-10-06T07:33:09.000Z"
+    },
+    {
+      "id": "f73b9cba",
+      "text": "Podar en refs/loose-ends/items los cabos cerrados, rechazados y caducados antiguos (regla determinista por closedAt, guardando los últimos 50 rechazados) para que el blob no crezca hasta 4 MiB y deje de leerse",
+      "priority": "low",
+      "status": "done",
+      "source": "tool",
+      "evidence": "sin poda, el blob crece sin límite",
+      "branch": "rediseno-0.4",
+      "createdAt": "2026-10-05T23:24:39.250Z",
+      "closedAt": "2026-10-06T07:33:09.000Z",
+      "updatedAt": "2026-10-06T07:33:09.000Z"
+    },
+    {
+      "id": "1e66b72e",
+      "text": "Añadir un test para la rama de respaldo de mergeRemoteNow: el fast-forward con update-ref pierde contra otra sesión y se hace la fusión normal",
+      "priority": "low",
+      "status": "done",
+      "source": "tool",
+      "evidence": "ningún test fijado cubre la rama de respaldo de la convergencia",
+      "branch": "rediseno-0.4",
+      "createdAt": "2026-10-05T23:24:40.341Z",
+      "closedAt": "2026-10-06T07:33:09.000Z",
+      "updatedAt": "2026-10-06T07:33:09.000Z"
+    },
+    {
+      "id": "83e656f1",
+      "text": "Añadir al README de loose-ends una sección «Actualizar»: refrescar primero el marketplace (/plugin → Marketplaces → claude-loose-ends → Update, o `claude plugin marketplace update claude-loose-ends`) y después actualizar el plugin.",
+      "priority": "medium",
+      "status": "open",
+      "source": "tool",
+      "evidence": "El README no explica que hay que refrescar el marketplace antes de que aparezca «actualizar».",
+      "branch": "master",
+      "createdAt": "2026-10-06T07:42:49.846Z",
+      "updatedAt": "2026-10-06T07:42:49.846Z"
+    }
+  ]
+}
