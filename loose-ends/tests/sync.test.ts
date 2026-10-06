@@ -262,3 +262,33 @@ test('if origin moved after the fetch, the push is refused and nothing is overwr
   expect(w.remoteText(ROOT)).toContain('Empujado por otro')
   expect(w.logs.some(l => l.includes('no se pudieron subir'))).toBe(true)
 })
+
+test('a fetch or push that times out says the loose ends could not be uploaded', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) }, remote: { [ROOT]: '' } })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  await w.start($)
+  await w.clock.settle()
+  const ui = await pane($)
+  expect(await ui.find({ key: 'push-now' })).toBeDefined()
+  w.flags.timeoutNet = true
+  await ui.press({ key: 'push-now' })
+  await w.clock.settle()
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: 'No se pudieron subir a origin' })).toBeDefined()
+  expect(w.pushes).toEqual([])
+  // the test host turns a throwing stub into its own error, so only the start of the line is checked
+  expect(w.logs.some(l => l.startsWith('loose-ends: no se pudieron subir los cabos a origin ('))).toBe(true)
+  await ui.unmount()
+})
+
+test('a fetch that times out at start is logged and the start still says where the ref stands', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) }, remote: { [ROOT]: '' } })
+  on('ui.render', () => ({ type: 'Box', props: { children: [] } }))
+  w.flags.timeoutNet = true
+  await w.start($)
+  await w.clock.settle()
+  expect(w.logs.some(l => l.startsWith('loose-ends: no se pudieron traer los cabos de origin ('))).toBe(true)
+  const ui = await pane($)
+  expect(await ui.find({ type: 'Text', text: 'Cambios sin subir' })).toBeDefined()
+  await ui.unmount()
+})

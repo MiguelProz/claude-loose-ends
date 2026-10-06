@@ -40,7 +40,8 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   let branch = opts.branch ?? 'main'
   let root = opts.root ?? ROOT
   const repos = opts.repos ?? { [ROOT]: ROOT }
-  const flags = { failWrites: false, failGit: false, failLog: false, throwGit: false }
+  // timeoutNet: fetch and push reject, as $.process.run does when a network call outlasts its timeoutMs
+  const flags = { failWrites: false, failGit: false, failLog: false, throwGit: false, timeoutNet: false }
   const runs: string[][] = []
   const logs: string[] = []
   const toasts: string[] = []
@@ -154,6 +155,7 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
         return result(0, top in remotes ? 'origin\n' : '')
       case 'fetch': {
         netEnvs.push(e.init?.env)
+        if (flags.timeoutNet) throw new Error('git fetch superó el tiempo')
         // origin holds only the data ref: `+<src>:<dst>`
         const [src, dst] = String(args.at(-1)).replace(/^\+/, '').split(':')
         if (!(top in remotes) || remotes[top] === null || src !== REF) return result(128, '')
@@ -163,6 +165,7 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
       }
       case 'push': {
         netEnvs.push(e.init?.env)
+        if (flags.timeoutNet) throw new Error('git push superó el tiempo')
         if (!(top in remotes)) return result(128, '')
         const [src, dst] = String(args.at(-1)).split(':')
         // like real git's receive-pack: a ref with one component under refs/ is a "funny refname"

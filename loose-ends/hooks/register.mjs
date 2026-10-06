@@ -315,7 +315,14 @@ async function mergeRemoteNow($, root, theirs) {
 // (`ok`) and the sha fetched (`lease`, for a push), null when origin has no ref yet or the fetch failed.
 async function pullRemote($, root) {
   if (!(await hasRemote($, root))) return null
-  const fetched = await $.process.run(['git', '-C', root, ...FETCH_ARGS], { timeoutMs: 20000, env: NET_ENV })
+  let fetched
+  try {
+    fetched = await $.process.run(['git', '-C', root, ...FETCH_ARGS], { timeoutMs: 20000, env: NET_ENV })
+  } catch (err) {
+    // a fetch that outlasts its timeout rejects; it counts as one that failed
+    await logDebug($, `loose-ends: no se pudieron traer los cabos de origin (${err?.message ?? err})`)
+    return { ok: true, lease: null }
+  }
   if (fetched.exitCode !== 0) {
     await logDebug($, 'loose-ends: no se pudieron traer los cabos de origin')
     return { ok: true, lease: null }
@@ -353,13 +360,20 @@ async function pushRemote($, root) {
   const mine = await readSha($, root, REF)
   if (!mine) return
   if (mine !== lease) {
-    const pushed = await $.process.run(['git', '-C', root, ...pushArgs(lease, mine)], { timeoutMs: 30000, env: NET_ENV })
-    if (pushed.exitCode !== 0) {
+    let pushed
+    let why = ''
+    try {
+      pushed = await $.process.run(['git', '-C', root, ...pushArgs(lease, mine)], { timeoutMs: 30000, env: NET_ENV })
+    } catch (err) {
+      // a push that outlasts its timeout rejects; it counts as one that failed
+      why = ` (${err?.message ?? err})`
+    }
+    if (!pushed || pushed.exitCode !== 0) {
       if (root === sessionRepo) {
         sync = 'failed'
         $.ui.invalidate('ui.render')
       }
-      await logDebug($, 'loose-ends: no se pudieron subir los cabos a origin')
+      await logDebug($, `loose-ends: no se pudieron subir los cabos a origin${why}`)
       return
     }
     await $.process.run(['git', '-C', root, ...trackArgs(mine)])
