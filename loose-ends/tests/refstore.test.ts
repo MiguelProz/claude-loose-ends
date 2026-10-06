@@ -23,8 +23,8 @@ describe('refstore argv', () => {
     expect(updateArgs('n1', null)).toEqual(['update-ref', 'refs/loose-ends/items', 'n1', ''])
   })
   test('push leases what was fetched and sends the commit that was read; the tracking ref follows it', () => {
-    expect(pushArgs('r1', 'n1')).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends/items:r1', 'origin', 'n1:refs/loose-ends/items'])
-    expect(pushArgs(null, 'n1')).toEqual(['push', '--quiet', '--force-with-lease=refs/loose-ends/items:', 'origin', 'n1:refs/loose-ends/items'])
+    expect(pushArgs('r1', 'n1')).toEqual(['push', '--quiet', '--no-verify', '--force-with-lease=refs/loose-ends/items:r1', 'origin', 'n1:refs/loose-ends/items'])
+    expect(pushArgs(null, 'n1')).toEqual(['push', '--quiet', '--no-verify', '--force-with-lease=refs/loose-ends/items:', 'origin', 'n1:refs/loose-ends/items'])
     expect(trackArgs('n1')).toEqual(['update-ref', 'refs/loose-ends/origin', 'n1'])
   })
   test('fetch and push never wait for a credential prompt', () => {

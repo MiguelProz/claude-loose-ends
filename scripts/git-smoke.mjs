@@ -1,8 +1,9 @@
 // Replays against real git the commands loose-ends builds in lib/refstore.mjs: a bare remote and two clones in a
-// temporary folder, the data ref created, pushed, fetched, adopted, pushed again, and a stale lease refused.
+// temporary folder, the data ref created, pushed, fetched, adopted, pushed again, and a stale lease refused. Both
+// clones have a pre-push hook that always fails, as a repo with husky tests can: the ref's push must skip it.
 // Prints OK, or the step that failed, and exits non-zero on failure. A development check, not part of the mod.
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -62,6 +63,9 @@ try {
     for (const clone of [cloneA, cloneB]) {
       ok(git(dir, ['init', '--quiet', clone]))
       ok(git(clone, ['remote', 'add', 'origin', remote]))
+      const hook = join(clone, '.git', 'hooks', 'pre-push')
+      writeFileSync(hook, '#!/bin/sh\necho "pre-push del repo" >&2\nexit 1\n')
+      chmodSync(hook, 0o755)
     }
   })
 

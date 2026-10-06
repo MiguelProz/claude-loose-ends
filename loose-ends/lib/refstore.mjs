@@ -23,8 +23,9 @@ export const updateArgs = (next, prev) => ['update-ref', REF, next, prev ?? '']
 export const REMOTE_ARGS = ['remote']
 export const FETCH_ARGS = ['fetch', '--quiet', 'origin', `+${REF}:${REMOTE_REF}`]
 // Sends commit `sha` (the one just read) to origin's ref, only if origin still holds what was fetched (nothing,
-// when lease is null).
-export const pushArgs = (lease, sha) => ['push', '--quiet', `--force-with-lease=${REF}:${lease ?? ''}`, 'origin', `${sha}:${REF}`]
+// when lease is null). `--no-verify`: the repo's pre-push hooks (tests, lint) guard its branches, not this ref, and
+// running them in the background could outlast the timeout.
+export const pushArgs = (lease, sha) => ['push', '--quiet', '--no-verify', `--force-with-lease=${REF}:${lease ?? ''}`, 'origin', `${sha}:${REF}`]
 export const trackArgs = sha => ['update-ref', REMOTE_REF, sha]
 export const SYNC_GET_ARGS = ['config', '--get', 'loose-ends.sync']
 export const syncSetArgs = on => ['config', 'loose-ends.sync', on ? 'true' : 'false']
