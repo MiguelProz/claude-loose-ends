@@ -53,6 +53,21 @@ Requiere Claude Code 2.1.287 o posterior (probado con 2.1.288).
     /plugin install loose-ends@claude-loose-ends
     /reload-plugins
 
+## Actualizar
+
+Claude Code no sabe que hay una versión nueva hasta que refresca su copia del
+marketplace; mientras no lo haga, `/plugin` enseña la versión vieja y no ofrece
+actualizar. Primero el marketplace, después el plugin:
+
+    claude plugin marketplace update claude-loose-ends
+    claude plugin update loose-ends@claude-loose-ends
+
+Lo mismo dentro de Claude Code: `/plugin marketplace update claude-loose-ends`,
+o `/plugin` → pestaña Marketplaces → claude-loose-ends → `Update marketplace`;
+después, pestaña Installed → loose-ends → actualizar. La versión nueva se carga
+al reiniciar la sesión. En ese mismo menú del marketplace, `Enable auto-update`
+hace que Claude Code lo refresque solo.
+
 ## Venir de 0.3
 
 La primera sesión en cada repo importa `.claude/loose-ends.json` a
