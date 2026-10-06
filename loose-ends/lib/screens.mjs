@@ -20,33 +20,80 @@ export function recapText({ since, fresh, closed }) {
 }
 
 // What the band says, the first that applies: unreadable, to review, urgent, just closed, since last time, open.
-// `strong` is the part of `text` the desktop draws bright, the rest dim; empty, the whole line is dim.
 export function bandLine(m) {
-  if (m.fileError) return { text: 'No puedo leer los cabos', strong: 'No puedo leer los cabos', action: 'open', label: 'Ver', warning: true }
+  if (m.fileError) return { text: 'No puedo leer los cabos', action: 'open', label: 'Ver', warning: true }
   const open = m.counts.live ? plural(m.counts.live, 'abierto', 'abiertos') : ''
   if (m.counts.candidates) {
     const review = `${m.counts.candidates} por revisar`
-    return { text: [review, open].filter(Boolean).join(' · '), strong: review, action: 'open', label: 'Revisar' }
+    return { text: [review, open].filter(Boolean).join(' · '), action: 'open', label: 'Revisar' }
   }
-  if (m.urgent) return { text: `Urgente: ${clip(m.urgent.text)}`, strong: clip(m.urgent.text), action: 'open', label: 'Ver' }
-  if (m.justClosed) return { text: `Cerrado: ${clip(m.justClosed.text)}`, strong: clip(m.justClosed.text), action: 'undo', label: 'Deshacer' }
-  if (m.recap && (m.recap.fresh || m.recap.closed)) return { text: recapText(m.recap), strong: '', action: 'open', label: 'Ver' }
-  if (open) return { text: open, strong: '', action: 'open', label: 'Ver' }
+  if (m.urgent) return { text: `Urgente: ${clip(m.urgent.text)}`, action: 'open', label: 'Ver' }
+  if (m.justClosed) return { text: `Cerrado: ${clip(m.justClosed.text)}`, action: 'undo', label: 'Deshacer' }
+  if (m.recap && (m.recap.fresh || m.recap.closed)) return { text: recapText(m.recap), action: 'open', label: 'Ver' }
+  if (open) return { text: open, action: 'open', label: 'Ver' }
   return null
 }
 
-// The line split around its strong part: what comes before and after it dim, the part itself bright (or in the
-// warning color). An item text goes in a Text, never in Markdown, so a text the model wrote cannot draw a link.
-function lineParts(el, line) {
-  const at = line.strong ? line.text.indexOf(line.strong) : -1
-  if (at < 0) return [el.Text({ dimColor: true, children: line.text })]
-  const before = line.text.slice(0, at).trim()
-  const after = line.text.slice(at + line.strong.length).trim()
-  return [
-    ...(before ? [el.Text({ dimColor: true, children: before })] : []),
-    el.Text({ ...(line.warning ? { color: 'warning' } : {}), children: line.strong }),
-    ...(after ? [el.Text({ dimColor: true, children: after })] : []),
-  ]
+const SYNC_WORDS = { synced: 'subido a origin', ahead: 'sin subir', failed: 'no se pudo subir', local: 'solo en este ordenador' }
+const PRIORITY_COUNT = [
+  ['high', 'urgente', 'urgentes'],
+  ['medium', 'normal', 'normales'],
+  ['low', 'baja', 'bajas'],
+]
+
+// What the desktop band says: a border color, the top line, the dim segments under it, the button and the link.
+// The first that applies: unreadable, to review, just closed, since last time, the next loose end; nothing open, null.
+export function bandCard(m) {
+  const next = m.next
+  const sync = SYNC_WORDS[m.sync] ? [{ text: SYNC_WORDS[m.sync] }] : []
+  const doNext = next ? { label: 'Hacer', action: 'doNow', id: next.id } : null
+  const nextBorder = next?.priority === 'high' ? 'error' : 'promptBorder'
+  if (m.fileError) {
+    return { border: 'error', top: { text: 'No puedo leer los cabos', color: 'warning' }, bottom: [{ text: 'El Cuaderno dice por qué' }], button: null, link: { label: 'Ver', action: 'open' } }
+  }
+  if (m.counts.candidates) {
+    const n = m.counts.candidates
+    const bottom = [...(next ? [{ text: `Siguiente: ${clip(next.text)}` }] : []), ...(m.counts.live ? [{ text: plural(m.counts.live, 'abierto', 'abiertos') }] : []), ...sync]
+    return { border: 'claude', top: { text: n === 1 ? '1 cabo espera tu visto bueno' : `${n} cabos esperan tu visto bueno` }, bottom, button: { label: 'Revisar', action: 'open' }, link: null }
+  }
+  if (m.justClosed) {
+    const bottom = next ? [{ text: `Quedan ${m.counts.live}` }, { text: `siguiente: ${clip(next.text)}` }] : [{ text: 'No queda nada abierto' }]
+    return { border: 'success', top: { text: `Cerrado: ${clip(m.justClosed.text)}` }, bottom, button: doNext, link: { label: 'Deshacer', action: 'undo' } }
+  }
+  if (m.recap && (m.recap.fresh || m.recap.closed)) {
+    const bottom = next ? [{ text: `Siguiente: ${clip(next.text)}`, priority: next.priority }] : [{ text: 'No queda nada abierto' }]
+    return { border: nextBorder, top: { text: recapText(m.recap) }, bottom, button: doNext, link: { label: 'Cuaderno', action: 'open' } }
+  }
+  if (!next) return null
+  const label = next.status === 'doing' ? 'En curso' : next.priority === 'high' ? 'Urgente' : 'Siguiente'
+  const byPriority = PRIORITY_COUNT.filter(([p]) => m.counts[p]).map(([p, one, many]) => ({ text: plural(m.counts[p], one, many), priority: p }))
+  return {
+    border: nextBorder,
+    top: { text: next.text, priority: next.priority, ...(next.file ? { file: next.file } : {}) },
+    bottom: [{ text: label }, ...byPriority, ...sync],
+    button: doNext,
+    link: { label: 'Cuaderno', action: 'open' },
+  }
+}
+
+// The top line of the card: the priority dot, the text cut to fit, and the file, dim.
+function cardTop(el, top) {
+  const parts = []
+  if (top.priority) parts.push(el.Text({ ...(DOT[top.priority] ?? DOT.medium), children: '●' }))
+  parts.push(el.Box({ flexShrink: 1, minWidth: 0, children: [el.Text({ wrap: 'truncate-end', ...(top.color ? { color: top.color } : {}), children: top.text })] }))
+  if (top.file) parts.push(el.Text({ dimColor: true, children: top.file }))
+  return el.Box({ key: 'band-top', flexDirection: 'row', gap: 1, overflow: 'hidden', children: parts })
+}
+
+// The bottom line: the segments, dim, a dot before each one that names a priority, joined by «·».
+function cardBottom(el, bottom) {
+  const parts = []
+  bottom.forEach((seg, i) => {
+    if (i) parts.push(el.Text({ dimColor: true, children: '·' }))
+    if (seg.priority) parts.push(el.Text({ ...(DOT[seg.priority] ?? DOT.medium), children: '●' }))
+    parts.push(el.Text({ dimColor: true, wrap: 'truncate-end', children: seg.text }))
+  })
+  return el.Box({ key: 'band-bottom', flexDirection: 'row', gap: 1, overflow: 'hidden', children: parts })
 }
 
 export function renderBand(el, surface, m, actions) {
@@ -60,22 +107,31 @@ export function renderBand(el, surface, m, actions) {
     }
     return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
   }
-  const chispa = el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 36, height: 30 })
-  if (!line) return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children: [chispa] })
-  // a card like the pane's: Chispa, the line, and the action as a link pushed to the end
-  const href = line.action === 'undo' ? UNDO_HREF : OPEN_PANE_HREF
+  const chispa = el.Svg({ source: chispaSvg(m.mood), alt: MOOD_LABELS[m.mood] ?? MOOD_LABELS.idle, width: 44, height: 37 })
+  const card = bandCard(m)
+  if (!card) return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children: [chispa] })
+  const run = target => (target.action === 'doNow' ? actions.doNow(target.id) : target.action === 'undo' ? actions.undoClose() : actions.openPane())
+  const side = []
+  if (card.button) {
+    side.push(el.Button({ key: 'band-act', label: card.button.label, variant: 'primary', dimColor: card.button.action === 'doNow' && m.working, onPress: () => run(card.button) }))
+  }
+  if (card.link) {
+    const href = card.link.action === 'undo' ? UNDO_HREF : OPEN_PANE_HREF
+    side.push(el.Markdown({ key: 'band-line', text: `[${card.link.label}](${href})`, pressableLinks: [href], onLinkPress: () => run(card.link) }))
+  }
+  // a live card: the border says the state, the fill sets it apart from the transcript
   return el.Box({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 1,
     borderStyle: 'round',
-    borderColor: 'promptBorder',
+    borderColor: card.border,
+    backgroundColor: 'userMessageBackground',
     paddingX: 1,
     children: [
       chispa,
-      ...lineParts(el, line),
-      el.Box({ flexGrow: 1 }),
-      el.Markdown({ key: 'band-line', text: `[${line.label}](${href})`, pressableLinks: [href], onLinkPress: press }),
+      el.Box({ flexDirection: 'column', flexGrow: 1, flexShrink: 1, minWidth: 0, children: [cardTop(el, card.top), cardBottom(el, card.bottom)] }),
+      el.Box({ flexDirection: 'column', alignItems: 'flex-end', children: side }),
     ],
   })
 }

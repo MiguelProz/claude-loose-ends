@@ -1,25 +1,25 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { OPEN_PANE_HREF, UNDO_HREF, ago, bandLine, clip, emphasize, recapText, renderBand, renderPane, renderTriage, sinceText } from '../lib/screens.mjs'
+import { OPEN_PANE_HREF, UNDO_HREF, ago, bandCard, bandLine, clip, emphasize, recapText, renderBand, renderPane, renderTriage, sinceText } from '../lib/screens.mjs'
 
 const fake = new Proxy({}, { get: (_, type) => (props: any) => ({ type, props }) }) as any
 const flat = (node: any): any[] => [node, ...([] as any[]).concat(node?.props?.children ?? []).flatMap(c => (typeof c === 'object' ? flat(c) : []))]
 const byKey = (node: any, key: string) => flat(node).find(n => n?.props?.key === key)
 const texts = (node: any) => flat(node).filter(n => n?.type === 'Text').map(n => String(n.props.children))
 const noop = () => {}
-const counts = (over = {}) => ({ candidates: 0, live: 0, high: 0, ...over })
-const band = (over = {}) => ({ mood: 'idle', counts: counts(), urgent: null, justClosed: null, recap: null, fileError: null, ...over })
+const counts = (over = {}) => ({ candidates: 0, live: 0, high: 0, medium: 0, low: 0, ...over })
+const band = (over = {}) => ({ mood: 'idle', counts: counts(), urgent: null, next: null, justClosed: null, recap: null, fileError: null, sync: null, working: false, ...over })
 const item = (over = {}) => ({ id: 'c1', text: 'Corregir los revalidatePath del grupo (app)', category: 'deuda', priority: 'medium', status: 'candidate', evidence: 'unos 41 revalidatePath ya no coinciden', createdAt: '2026-10-04T09:00:00.000Z', ...over })
 
 describe('band line', () => {
   test('the first that applies: unreadable, to review, urgent, just closed, since last time, open, nothing', () => {
-    expect(bandLine(band({ fileError: 'json', counts: counts({ candidates: 2 }) }))).toEqual({ text: 'No puedo leer los cabos', strong: 'No puedo leer los cabos', action: 'open', label: 'Ver', warning: true })
-    expect(bandLine(band({ counts: counts({ candidates: 2, live: 1, high: 1 }), urgent: item() }))).toEqual({ text: '2 por revisar · 1 abierto', strong: '2 por revisar', action: 'open', label: 'Revisar' })
+    expect(bandLine(band({ fileError: 'json', counts: counts({ candidates: 2 }) }))).toEqual({ text: 'No puedo leer los cabos', action: 'open', label: 'Ver', warning: true })
+    expect(bandLine(band({ counts: counts({ candidates: 2, live: 1, high: 1 }), urgent: item() }))).toEqual({ text: '2 por revisar · 1 abierto', action: 'open', label: 'Revisar' })
     expect(bandLine(band({ counts: counts({ candidates: 1 }) }))?.text).toBe('1 por revisar')
-    expect(bandLine(band({ counts: counts({ live: 3, high: 1 }), urgent: item({ text: 'Arreglar el login' }), justClosed: { text: 'x' } }))).toEqual({ text: 'Urgente: Arreglar el login', strong: 'Arreglar el login', action: 'open', label: 'Ver' })
-    expect(bandLine(band({ counts: counts({ live: 3 }), justClosed: { text: 'Envío duplicado' } }))).toEqual({ text: 'Cerrado: Envío duplicado', strong: 'Envío duplicado', action: 'undo', label: 'Deshacer' })
-    expect(bandLine(band({ counts: counts({ live: 3 }), recap: { since: 'ayer', fresh: 2, closed: 1 } }))).toEqual({ text: 'Desde ayer: 2 nuevos · 1 cerrado en otra sesión', strong: '', action: 'open', label: 'Ver' })
+    expect(bandLine(band({ counts: counts({ live: 3, high: 1 }), urgent: item({ text: 'Arreglar el login' }), justClosed: { text: 'x' } }))).toEqual({ text: 'Urgente: Arreglar el login', action: 'open', label: 'Ver' })
+    expect(bandLine(band({ counts: counts({ live: 3 }), justClosed: { text: 'Envío duplicado' } }))).toEqual({ text: 'Cerrado: Envío duplicado', action: 'undo', label: 'Deshacer' })
+    expect(bandLine(band({ counts: counts({ live: 3 }), recap: { since: 'ayer', fresh: 2, closed: 1 } }))).toEqual({ text: 'Desde ayer: 2 nuevos · 1 cerrado en otra sesión', action: 'open', label: 'Ver' })
     expect(bandLine(band({ counts: counts({ live: 3 }), recap: { since: 'ayer', fresh: 0, closed: 0 } }))?.text).toBe('3 abiertos')
-    expect(bandLine(band({ counts: counts({ live: 1 }) }))).toEqual({ text: '1 abierto', strong: '', action: 'open', label: 'Ver' })
+    expect(bandLine(band({ counts: counts({ live: 1 }) }))).toEqual({ text: '1 abierto', action: 'open', label: 'Ver' })
     expect(bandLine(band())).toBe(null)
   })
   test('long texts are clipped to 60 characters with an ellipsis', () => {
@@ -32,60 +32,132 @@ describe('band line', () => {
   })
 })
 
+describe('band card', () => {
+  const next = (over = {}) => item({ id: 'o1', status: 'open', text: 'Probar el camino desde /plugin', priority: 'medium', file: undefined, ...over })
+  test('nothing open and nothing to say: no card', () => {
+    expect(bandCard(band())).toBe(null)
+  })
+  test('unreadable ref: red border, the warning, a pointer to the pane and Ver', () => {
+    expect(bandCard(band({ fileError: 'json', counts: counts({ candidates: 2 }), next: next() }))).toEqual({
+      border: 'error', top: { text: 'No puedo leer los cabos', color: 'warning' }, bottom: [{ text: 'El Cuaderno dice por qué' }], button: null, link: { label: 'Ver', action: 'open' },
+    })
+  })
+  test('to review: accent border, how many wait, the next one, the open count, where the ref stands, and Revisar', () => {
+    expect(bandCard(band({ counts: counts({ candidates: 2, live: 4, medium: 4 }), next: next(), sync: 'ahead' }))).toEqual({
+      border: 'claude',
+      top: { text: '2 cabos esperan tu visto bueno' },
+      bottom: [{ text: 'Siguiente: Probar el camino desde /plugin' }, { text: '4 abiertos' }, { text: 'sin subir' }],
+      button: { label: 'Revisar', action: 'open' },
+      link: null,
+    })
+    expect(bandCard(band({ counts: counts({ candidates: 1 }) }))).toMatchObject({ top: { text: '1 cabo espera tu visto bueno' }, bottom: [] })
+  })
+  test('just closed: green border, what closed, what is left, Hacer on the next one and Deshacer', () => {
+    expect(bandCard(band({ counts: counts({ live: 4, medium: 4 }), justClosed: { text: 'Sección Actualizar' }, next: next() }))).toEqual({
+      border: 'success',
+      top: { text: 'Cerrado: Sección Actualizar' },
+      bottom: [{ text: 'Quedan 4' }, { text: 'siguiente: Probar el camino desde /plugin' }],
+      button: { label: 'Hacer', action: 'doNow', id: 'o1' },
+      link: { label: 'Deshacer', action: 'undo' },
+    })
+    expect(bandCard(band({ justClosed: { text: 'El último' } }))).toEqual({
+      border: 'success', top: { text: 'Cerrado: El último' }, bottom: [{ text: 'No queda nada abierto' }], button: null, link: { label: 'Deshacer', action: 'undo' },
+    })
+  })
+  test('since last time: the recap on top, the next one under it with its dot, Hacer and Cuaderno', () => {
+    expect(bandCard(band({ counts: counts({ live: 1, high: 1 }), recap: { since: 'ayer', fresh: 2, closed: 1 }, next: next({ priority: 'high' }) }))).toEqual({
+      border: 'error',
+      top: { text: 'Desde ayer: 2 nuevos · 1 cerrado en otra sesión' },
+      bottom: [{ text: 'Siguiente: Probar el camino desde /plugin', priority: 'high' }],
+      button: { label: 'Hacer', action: 'doNow', id: 'o1' },
+      link: { label: 'Cuaderno', action: 'open' },
+    })
+    expect(bandCard(band({ recap: { since: 'ayer', fresh: 0, closed: 2 } }))).toEqual({
+      border: 'promptBorder', top: { text: 'Desde ayer: 2 cerrados en otra sesión' }, bottom: [{ text: 'No queda nada abierto' }], button: null, link: { label: 'Cuaderno', action: 'open' },
+    })
+    expect(bandCard(band({ counts: counts({ live: 1, medium: 1 }), recap: { since: 'ayer', fresh: 0, closed: 0 }, next: next() }))?.top.text).toBe('Probar el camino desde /plugin')
+  })
+  test('normal: the next one on top with its dot and file, then Siguiente, the counts by priority and where the ref stands', () => {
+    expect(bandCard(band({ counts: counts({ live: 5, medium: 3, low: 2 }), next: next({ file: 'lib/a.ts' }), sync: 'synced' }))).toEqual({
+      border: 'promptBorder',
+      top: { text: 'Probar el camino desde /plugin', priority: 'medium', file: 'lib/a.ts' },
+      bottom: [{ text: 'Siguiente' }, { text: '3 normales', priority: 'medium' }, { text: '2 bajas', priority: 'low' }, { text: 'subido a origin' }],
+      button: { label: 'Hacer', action: 'doNow', id: 'o1' },
+      link: { label: 'Cuaderno', action: 'open' },
+    })
+  })
+  test('normal: an urgent next one turns the border red and says Urgente; one in progress says En curso; the ref words', () => {
+    expect(bandCard(band({ counts: counts({ live: 1, high: 1 }), next: next({ priority: 'high' }) }))).toMatchObject({
+      border: 'error', bottom: [{ text: 'Urgente' }, { text: '1 urgente', priority: 'high' }],
+    })
+    expect(bandCard(band({ counts: counts({ live: 1, high: 1 }), next: next({ priority: 'high', status: 'doing' }) }))?.bottom[0]).toEqual({ text: 'En curso' })
+    const last = (sync: string | null) => bandCard(band({ counts: counts({ live: 1, medium: 1 }), next: next(), sync }))?.bottom.at(-1)
+    expect(last('failed')).toEqual({ text: 'no se pudo subir' })
+    expect(last('local')).toEqual({ text: 'solo en este ordenador' })
+    expect(last(null)).toEqual({ text: '1 normal', priority: 'medium' })
+  })
+})
+
 describe('band', () => {
-  const lineTexts = (root: any) => flat(root).filter(n => n?.type === 'Text').map(n => ({ text: n.props.children, dim: Boolean(n.props.dimColor), color: n.props.color }))
-  test('desktop: a card with Chispa, the key part of the line bright, the rest dim, and the action as a link at the end', () => {
-    const opened: string[] = []
-    const root = renderBand(fake, 'desktop', band({ mood: 'note', counts: counts({ candidates: 2, live: 1 }) }), { openPane: () => opened.push('open'), undoClose: noop })
-    expect(root.props).toMatchObject({ flexDirection: 'row', alignItems: 'center', borderStyle: 'round', borderColor: 'promptBorder', paddingX: 1 })
-    expect(root.props.children[0]).toMatchObject({ type: 'Svg', props: { alt: 'Chispa con una nota: hay cabos por revisar', width: 36, height: 30 } })
-    expect(lineTexts(root)).toEqual([{ text: '2 por revisar', dim: false, color: undefined }, { text: '· 1 abierto', dim: true, color: undefined }])
+  const calls: string[] = []
+  const acts = { openPane: () => calls.push('open'), undoClose: () => calls.push('undo'), doNow: (id: string) => calls.push(`doNow ${id}`) }
+  const next = (over = {}) => item({ id: 'o1', status: 'open', text: 'Probar el camino desde /plugin', priority: 'medium', file: undefined, ...over })
+  test('desktop: a filled card, Chispa at 44×37, the two lines, Hacer and the Cuaderno link', () => {
+    calls.length = 0
+    const root = renderBand(fake, 'desktop', band({ counts: counts({ live: 2, medium: 2 }), next: next({ file: 'lib/a.ts' }) }), acts)
+    expect(root.props).toMatchObject({ flexDirection: 'row', alignItems: 'center', borderStyle: 'round', borderColor: 'promptBorder', backgroundColor: 'userMessageBackground', paddingX: 1 })
+    expect(root.props.children[0]).toMatchObject({ type: 'Svg', props: { alt: 'Chispa atenta', width: 44, height: 37 } })
+    const top = byKey(root, 'band-top')
+    expect(flat(top).find(n => n?.props?.children === '●')?.props.color).toBe('warning')
+    expect(flat(top).find(n => n?.props?.children === 'Probar el camino desde /plugin')?.props.wrap).toBe('truncate-end')
+    expect(flat(top).find(n => n?.props?.children === 'lib/a.ts')?.props.dimColor).toBe(true)
+    expect(texts(byKey(root, 'band-bottom'))).toEqual(['Siguiente', '·', '●', '2 normales'])
+    const act = byKey(root, 'band-act')
+    expect(act.props).toMatchObject({ label: 'Hacer', variant: 'primary', dimColor: false })
+    act.props.onPress()
     const link = byKey(root, 'band-line')
-    expect(root.props.children.at(-1)).toBe(link)
-    expect(link.props).toMatchObject({ text: `[Revisar](${OPEN_PANE_HREF})`, pressableLinks: [OPEN_PANE_HREF] })
-    expect(link.props.dimColor).toBeUndefined()
-    expect(root.props.children.at(-2).props.flexGrow).toBe(1)
+    expect(link.props).toMatchObject({ text: `[Cuaderno](${OPEN_PANE_HREF})`, pressableLinks: [OPEN_PANE_HREF] })
     link.props.onLinkPress()
-    expect(opened).toEqual(['open'])
+    expect(calls).toEqual(['doNow o1', 'open'])
+    expect(flat(root).filter(n => n?.type === 'Markdown').map(n => n.props.text)).toEqual([`[Cuaderno](${OPEN_PANE_HREF})`])
   })
-  test('desktop: just closed shows the label dim and the text bright, and its link undoes', () => {
-    const undone: string[] = []
-    const root = renderBand(fake, 'desktop', band({ mood: 'celebrate', counts: counts({ live: 1 }), justClosed: { text: 'Envío duplicado' } }), { openPane: noop, undoClose: () => undone.push('undo') })
-    expect(lineTexts(root)).toEqual([{ text: 'Cerrado:', dim: true, color: undefined }, { text: 'Envío duplicado', dim: false, color: undefined }])
-    const link = byKey(root, 'band-line')
-    expect(link.props.text).toBe(`[Deshacer](${UNDO_HREF})`)
-    link.props.onLinkPress()
-    expect(undone).toEqual(['undo'])
+  test('desktop: Hacer is dim while a turn runs; Revisar opens the pane; Deshacer undoes; no link when there is none', () => {
+    calls.length = 0
+    expect(byKey(renderBand(fake, 'desktop', band({ counts: counts({ live: 1, medium: 1 }), next: next(), working: true }), acts), 'band-act').props.dimColor).toBe(true)
+    const review = renderBand(fake, 'desktop', band({ counts: counts({ candidates: 1 }) }), acts)
+    expect(review.props.borderColor).toBe('claude')
+    expect(byKey(review, 'band-line')).toBeUndefined()
+    byKey(review, 'band-act').props.onPress()
+    const closed = renderBand(fake, 'desktop', band({ justClosed: { text: 'Hecho' } }), acts)
+    expect(byKey(closed, 'band-act')).toBeUndefined()
+    expect(byKey(closed, 'band-line').props.text).toBe(`[Deshacer](${UNDO_HREF})`)
+    byKey(closed, 'band-line').props.onLinkPress()
+    expect(calls).toEqual(['open', 'undo'])
   })
-  test('desktop: an item text is drawn as plain text, never as Markdown, so it cannot draw a link', () => {
-    const urgent = item({ text: '[Pulsa](https://x.y) *ya*' })
-    const desk = renderBand(fake, 'desktop', band({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent }), { openPane: noop, undoClose: noop })
-    expect(lineTexts(desk)).toEqual([{ text: 'Urgente:', dim: true, color: undefined }, { text: '[Pulsa](https://x.y) *ya*', dim: false, color: undefined }])
-    expect(flat(desk).filter(n => n?.type === 'Markdown').map(n => n.props.text)).toEqual([`[Ver](${OPEN_PANE_HREF})`])
-    const term = renderBand(fake, 'terminal', band({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent }), { openPane: noop, undoClose: noop })
-    expect(texts(term)[1]).toBe('Urgente: [Pulsa](https://x.y) *ya*')
+  test('desktop: the warning in its color; an item text is plain text even with Markdown in it', () => {
+    const warn = renderBand(fake, 'desktop', band({ fileError: 'json' }), acts)
+    expect(flat(byKey(warn, 'band-top')).find(n => n?.props?.children === 'No puedo leer los cabos')?.props.color).toBe('warning')
+    const tricky = renderBand(fake, 'desktop', band({ counts: counts({ live: 1, high: 1 }), next: next({ text: '[Pulsa](https://x.y) *ya*', priority: 'high' }) }), acts)
+    expect(texts(byKey(tricky, 'band-top'))).toContain('[Pulsa](https://x.y) *ya*')
+    expect(flat(tricky).filter(n => n?.type === 'Markdown').map(n => n.props.text)).toEqual([`[Cuaderno](${OPEN_PANE_HREF})`])
   })
-  test('desktop: an unreadable ref is the warning color; the open count alone is all dim', () => {
-    expect(lineTexts(renderBand(fake, 'desktop', band({ fileError: 'json' }), { openPane: noop, undoClose: noop }))).toEqual([{ text: 'No puedo leer los cabos', dim: false, color: 'warning' }])
-    expect(lineTexts(renderBand(fake, 'desktop', band({ counts: counts({ live: 3 }) }), { openPane: noop, undoClose: noop }))).toEqual([{ text: '3 abiertos', dim: true, color: undefined }])
+  test('desktop: with nothing to say the band is only Chispa, without a card', () => {
+    const root = renderBand(fake, 'desktop', band(), acts)
+    expect(root.props.children).toHaveLength(1)
+    expect(root.props.borderStyle).toBeUndefined()
   })
   test('terminal: a dim face, the dim line and a plain button', () => {
-    const root = renderBand(fake, 'terminal', band({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent: item({ text: 'Arreglar el login' }) }), { openPane: noop, undoClose: noop })
+    const root = renderBand(fake, 'terminal', band({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent: item({ text: 'Arreglar el login' }) }), acts)
     expect(texts(root)).toEqual(['(•_•)!', 'Urgente: Arreglar el login'])
     expect(byKey(root, 'open-pane').props).toMatchObject({ label: 'Ver', plain: true, dimColor: true })
     expect(flat(root).some(n => n?.type === 'Svg')).toBe(false)
     expect(root.props.borderStyle).toBeUndefined()
   })
   test('terminal: an unreadable ref is a warning; just closed is undo-close', () => {
-    const warn = renderBand(fake, 'terminal', band({ fileError: 'json' }), { openPane: noop, undoClose: noop })
+    const warn = renderBand(fake, 'terminal', band({ fileError: 'json' }), acts)
     expect(flat(warn).find(n => n?.props?.color === 'warning')?.props.children).toBe('No puedo leer los cabos')
-    const closed = renderBand(fake, 'terminal', band({ counts: counts({ live: 1 }), justClosed: { text: 'Hecho' } }), { openPane: noop, undoClose: noop })
+    const closed = renderBand(fake, 'terminal', band({ counts: counts({ live: 1 }), justClosed: { text: 'Hecho' } }), acts)
     expect(byKey(closed, 'undo-close')?.props.label).toBe('Deshacer')
-  })
-  test('with nothing to say the band is only Chispa, without a card', () => {
-    const root = renderBand(fake, 'desktop', band(), { openPane: noop, undoClose: noop })
-    expect(root.props.children).toHaveLength(1)
-    expect(root.props.borderStyle).toBeUndefined()
   })
 })
 
