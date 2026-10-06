@@ -146,6 +146,18 @@
       "createdAt": "2026-10-06T21:37:00.522Z",
       "updatedAt": "2026-10-06T21:37:54.548Z",
       "status": "doing"
+    },
+    {
+      "id": "5978eec8",
+      "text": "Resolver el código repetido en «Hacer» de la barra que duplica la línea del Cuaderno",
+      "category": "deuda",
+      "priority": "low",
+      "source": "sweep",
+      "evidence": "El «Hacer» de la barra repite la misma línea que el del Cuaderno; el revisor prefirió no juntarlos.",
+      "branch": "banda-0.4.4",
+      "createdAt": "2026-10-06T21:41:07.485Z",
+      "updatedAt": "2026-10-06T21:41:07.485Z",
+      "status": "candidate"
     }
   ]
 }
