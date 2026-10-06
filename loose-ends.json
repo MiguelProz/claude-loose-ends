@@ -69,8 +69,9 @@
       "evidence": "he apuntado como cabo suelto añadir al README una sección «Actualizar» con estos pasos",
       "branch": "master",
       "createdAt": "2026-10-06T07:43:05.052Z",
-      "updatedAt": "2026-10-06T07:43:05.052Z",
-      "status": "candidate"
+      "updatedAt": "2026-10-06T07:43:24.346Z",
+      "status": "rejected",
+      "closedAt": "2026-10-06T07:43:24.346Z"
     }
   ]
 }
