@@ -128,12 +128,12 @@
       "evidence": "puedo hacer que destaque más. Le daría a la tarjeta un fondo algo más claro que el resto, como el chip del fichero en el Cuaderno, pondría el número en claro también en «1 abierto» y haría «Ver» más visible.",
       "branch": "master",
       "createdAt": "2026-10-06T08:28:12.628Z",
-      "updatedAt": "2026-10-06T12:27:59.224Z",
-      "status": "open",
-      "proposal": {
-        "quote": "Tarjeta con fondo algo más claro que el resto, como el chip del fichero en el Cuaderno.",
-        "at": "2026-10-06T12:27:59.224Z"
-      }
+      "updatedAt": "2026-10-06T12:28:28.458Z",
+      "status": "done",
+      "proof": {
+        "quote": "Tarjeta con fondo algo más claro que el resto, como el chip del fichero en el Cuaderno."
+      },
+      "closedAt": "2026-10-06T12:28:28.458Z"
     }
   ]
 }
