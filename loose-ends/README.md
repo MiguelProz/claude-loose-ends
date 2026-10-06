@@ -27,10 +27,15 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   terminal, el panel ofrece `Subir`. Los cabos cerrados se borran a los 30
   días de cerrarse y se guardan los 50 últimos rechazados. Fuera de un repo git
   no se guarda nada (nunca en `~/.claude/`).
-- **Banda** encima del prompt: Chispa y una línea con una acción, la primera
-  que aplique: `No puedo leer los cabos · Ver`, `N por revisar · Revisar`,
-  `Urgente: … · Ver`, `Cerrado: … · Deshacer`, `Desde ayer: … · Ver` o
-  `N abiertos · Ver`.
+- **Banda** encima del prompt. En escritorio, una tarjeta cuyo borde dice el
+  estado: naranja con candidatos por revisar (`Revisar`), verde justo tras
+  cerrar un cabo (`Deshacer`), roja si el siguiente es urgente o no se pueden
+  leer los cabos. Nombra el siguiente cabo (el más urgente; a igual prioridad,
+  el que está en curso y luego el más antiguo) con `Hacer` para empezarlo, y
+  debajo cuántos hay de cada prioridad y si están subidos a origin. En la
+  terminal, una línea: `No puedo leer los cabos · Ver`, `N por revisar ·
+  Revisar`, `Urgente: … · Ver`, `Cerrado: … · Deshacer`, `Desde ayer: … · Ver`
+  o `N abiertos · Ver`.
 - **Chispa** lleva la señal: sostiene una nota si hay candidatos, se preocupa
   con un urgente, celebra al cerrar un cabo o tras un `git commit` con éxito,
   trabaja durante el turno y solo duerme tras 30 minutos quieta y sin nada
