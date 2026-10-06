@@ -24,8 +24,9 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   `origin`, se traen al empezar la sesión y se suben tras un `git push` que
   Claude ejecuta en la sesión: la primera vez pregunta, y `Siempre` o `Nunca`
   quedan en `git config loose-ends.sync`. Si haces el push desde tu propia
-  terminal, el panel ofrece `Subir`. Fuera de un repo git no se guarda nada
-  (nunca en `~/.claude/`).
+  terminal, el panel ofrece `Subir`. Los cabos cerrados se borran a los 30
+  días de cerrarse y se guardan los 50 últimos rechazados. Fuera de un repo git
+  no se guarda nada (nunca en `~/.claude/`).
 - **Banda** encima del prompt: Chispa y una línea con una acción, la primera
   que aplique: `No puedo leer los cabos · Ver`, `N por revisar · Revisar`,
   `Urgente: … · Ver`, `Cerrado: … · Deshacer`, `Desde ayer: … · Ver` o
