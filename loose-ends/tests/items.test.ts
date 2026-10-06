@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
-  CATEGORIES, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
+  CATEGORIES, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live, nextItem,
   markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap, prune, CLOSED_RETENTION_MS, REJECTED_KEEP,
 } from '../lib/items.mjs'
 
@@ -138,9 +138,18 @@ describe('queries', () => {
   })
   test('counts and the top urgent item', () => {
     const items = build()
-    expect(counts(items)).toEqual({ candidates: 2, live: 3, high: 1 })
+    expect(counts(items)).toEqual({ candidates: 2, live: 3, high: 1, medium: 1, low: 1 })
     expect(topUrgent(items)?.id).toBe('h1')
     expect(topUrgent([])).toBe(null)
+  })
+  test('the next item: the most urgent live one; at the same priority the one in progress, then the oldest', () => {
+    expect(nextItem(build())?.id).toBe('h1')
+    expect(nextItem([])).toBe(null)
+    let items = save(propose([], input({ id: 'm1', text: 'Antiguo', now: '2026-10-01T00:00:00.000Z' })).items, 'm1', T0)
+    items = save(propose(items, input({ id: 'm2', text: 'Nuevo', now: '2026-10-03T00:00:00.000Z' })).items, 'm2', T0)
+    expect(nextItem(items)?.id).toBe('m1')
+    expect(nextItem(start(items, 'm2', T1))?.id).toBe('m2')
+    expect(nextItem(propose([], input({ id: 'c9' })).items)).toBe(null)
   })
   test('the prompt suggests only an urgent item still open, without a proposed closure, and only while no candidate waits', () => {
     const urgent = (over = {}) => save(propose([], input({ id: 'h1', text: 'Urgente', priority: 'high', ...over })).items, 'h1', T0)
