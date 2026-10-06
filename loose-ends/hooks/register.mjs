@@ -667,6 +667,11 @@ async function undoClosed($) {
   await mutate($, list => restore(list, previous, now))
 }
 
+// Hacer, from the pane or the band: starts the item in the background and logs a failure.
+function pressNow($, id) {
+  background($, doNow($, id), 'Hacer')
+}
+
 async function doNow($, id) {
   if (working) return
   const item = items.find(i => i.id === id)
@@ -710,7 +715,7 @@ function itemActions($) {
       editing = null
       background($, act($, id, (list, target, now) => editText(list, target, text, now)), 'editar el cabo')
     },
-    doNow: id => background($, doNow($, id), 'Hacer'),
+    doNow: id => pressNow($, id),
     done: id => background($, closeWith($, id, markDone, null), 'cerrar el cabo'),
     dismiss: id => background($, act($, id, dismiss), 'descartar el cabo'),
     reopen: id => background($, act($, id, reopen), 'reabrir el cabo'),
@@ -878,9 +883,7 @@ export function register(on) {
       undoClose: () => {
         background($, undoClosed($), 'deshacer el cierre')
       },
-      doNow: id => {
-        background($, doNow($, id), 'Hacer')
-      },
+      doNow: id => pressNow($, id),
     })
   })
 
