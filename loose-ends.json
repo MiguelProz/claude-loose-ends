@@ -83,8 +83,12 @@
       "evidence": "El camino desde /plugin (Marketplaces → Update) no lo he probado en la app de escritorio.",
       "branch": "master",
       "createdAt": "2026-10-06T07:44:12.808Z",
-      "updatedAt": "2026-10-06T07:44:49.859Z",
-      "status": "doing"
+      "updatedAt": "2026-10-06T08:15:54.852Z",
+      "status": "doing",
+      "proposal": {
+        "quote": "he refrescado el marketplace y actualizado el plugin, que ya aparece como 0.4.2 y activo",
+        "at": "2026-10-06T08:15:54.852Z"
+      }
     },
     {
       "id": "dd988203",
