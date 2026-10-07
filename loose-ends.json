@@ -239,6 +239,19 @@
       "createdAt": "2026-10-07T18:22:09.258Z",
       "updatedAt": "2026-10-07T18:22:09.258Z",
       "status": "candidate"
+    },
+    {
+      "id": "7a423810",
+      "text": "Hacer que los candidatos del barrido maduren un turno (y esperen a que acaben los subagentes) antes de mostrarse",
+      "category": "mejora",
+      "priority": "medium",
+      "source": "tool",
+      "evidence": "Pendiente: candidatos del barrido que maduran un turno antes de mostrarse",
+      "file": "loose-ends/hooks/register.mjs",
+      "branch": "master",
+      "createdAt": "2026-10-07T18:28:24.801Z",
+      "updatedAt": "2026-10-07T18:28:24.801Z",
+      "status": "candidate"
     }
   ]
 }
