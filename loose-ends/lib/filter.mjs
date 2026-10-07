@@ -4,9 +4,11 @@ import { CATEGORIES, normalize } from './items.mjs'
 // deploying and sending to third parties.
 export const BANNED_STARTS = [
   'verificar', 'comprobar', 'confirmar', 'revisar', 'probar', 'ejecutar', 'lanzar', 'esperar', 'vigilar', 'decidir', 'informar', 'reportar', 'preguntar', 'avisar',
-  'hacer push', 'subir la rama', 'subir los cambios', 'hacer merge', 'mergear', 'desplegar', 'enviar',
+  'hacer push', 'subir la rama', 'subir los cambios', 'subir a main', 'hacer merge', 'mergear', 'fusionar y subir', 'fusionar la rama', 'desplegar', 'enviar',
 ]
 export const SIMILARITY = 0.6
+// The sweep repeats what Claude already noted in other words: its candidates are compared with the whole queue.
+export const SWEEP_SIMILARITY = 0.5
 export const REJECTED_WINDOW = 50
 // What a candidate must not repeat: what waits for the person and what is still to do.
 const POOL = new Set(['candidate', 'open', 'doing'])
@@ -52,6 +54,7 @@ export function rejectReason(candidate, items) {
     if (pool.some(i => i.evidence && normalize(i.evidence) === quote)) return 'repite la cita de otro cabo'
   }
   if (candidate.file && pool.some(i => i.file === candidate.file && similarity(i.text, candidate.text) >= SIMILARITY)) return 'se parece a otro cabo del mismo fichero'
+  if (candidate.source === 'sweep' && pool.some(i => similarity(i.text, candidate.text) >= SWEEP_SIMILARITY)) return 'se parece a otro cabo'
   const rejected = items
     .filter(i => i.status === 'rejected')
     .sort((a, b) => msOf(b.closedAt) - msOf(a.closedAt))

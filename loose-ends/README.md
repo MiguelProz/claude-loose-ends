@@ -12,11 +12,16 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   avisar, hacer push o merge, desplegar, enviar a terceros), lo repetido y lo
   parecido a lo que ya rechazaste. Del barrido descarta además lo que la frase
   entera da por hecho («… Corregido.»), lo que dice que ya se está haciendo
-  («he lanzado dos agentes que lo arreglan», «lo arreglo en la tanda 2») y lo
-  que deja como decisión tuya.
+  («he lanzado dos agentes que lo arreglan», «lo arreglo en la tanda 2»), lo
+  que deja como decisión tuya y lo que se parece a algo que ya espera. El
+  barrido nunca propone urgentes, y lo aplazado a propósito («más adelante»,
+  «fase 5») llega con prioridad baja. Si en ese turno Claude ya apuntó un cabo
+  con la herramienta, el barrido solo busca cierres.
 - **Tú decides**: el candidato aparece bajo el mensaje de Claude donde nació,
   con la frase en negrita, y `Guardar`, `No es un cabo` o `Editar`. Lo que no
-  revises espera en el panel y caduca a los 7 días. Si una respuesta posterior
+  revises espera en el panel y caduca a los 7 días. Lo que propone el barrido
+  espera un turno antes de aparecer, y más si hay subagentes trabajando (hasta
+  30 minutos). Si una respuesta posterior, o el asunto de un commit del turno,
   lo deja hecho, se retira solo: la tarjeta dice «Retirado: resuelto después»
   con `Deshacer`, y en Cerrados esta semana `↺` lo devuelve a revisión. Cada «No es un cabo» enseña
   al barrido: los últimos 20 van en su prompt.
@@ -106,8 +111,12 @@ Lo que había en origin la última vez que se trajo o se subió está en
     cd loose-ends && claude plugin test && claude plugin validate . --strict
     node ../scripts/chispa-gallery.mjs /tmp/chispa.html
     node ../scripts/git-smoke.mjs
+    node ../scripts/sweep-audit.mjs <repo>
 
 `git-smoke.mjs` repite con git de verdad, en una carpeta temporal con un remoto
 y dos clones, los comandos que el mod lanza sobre la ref: crearla, subirla con
 lease, traerla al otro clon y el rechazo cuando origin cambió. Dice `OK` o el
-paso que falló.
+paso que falló. `sweep-audit.mjs` lee los candidatos del barrido que ya hay en
+un repo, busca en los transcripts de ese repo la respuesta que citaban y dice
+cuáles descartaría ahora el filtro fijo y con qué prioridad llegarían los demás.
+No llama a Haiku.

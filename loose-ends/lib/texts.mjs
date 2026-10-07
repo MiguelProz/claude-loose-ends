@@ -40,7 +40,7 @@ export const SWEEP_SYSTEM = [
   'Si detrás de una decisión hay trabajo de código, el cabo es ese trabajo redactado como tarea, no la decisión. Lo aplazado a propósito («para más adelante», «fase 5») es deuda o mejora con prioridad low.',
   'Ante la duda, no lo propongas: es mejor devolver "new" vacío. Devuelve como máximo 2 cabos nuevos.',
   'Cada cabo nuevo lleva su categoría en "category" (bug, deuda, test, aviso o mejora) y en "evidence" la frase literal de la respuesta donde lo deja sin hacer, copiada tal cual (mínimo 12 caracteres); sin esa cita no se guarda.',
-  'En "resolved" pones los cabos abiertos y los de "Por revisar" que la respuesta deja hechos de verdad («arreglado», «hecho», «ya está», un commit que lo incluye): su id y en "quote" la frase literal de la respuesta que lo prueba.',
+  'En "resolved" pones los cabos abiertos y los de "Por revisar" que la respuesta deja hechos de verdad («arreglado», «hecho», «ya está», un commit que lo incluye): su id y en "quote" la frase literal de la respuesta que lo prueba, o el asunto literal de uno de los "Commits de este turno" que lo hace.',
   'Si hay una lista "Repos candidatos", rellena "repo" en cada cabo nuevo con la ruta exacta de uno de esos repos cuando el cabo pertenezca claramente a él; si dudas, omite "repo".',
   'Responde SOLO con JSON: {"new":[{"text":"frase accionable en español","category":"bug|deuda|test|aviso|mejora","priority":"high|medium|low","evidence":"frase literal","repo":"ruta de un repo candidato (opcional)"}],"resolved":[{"id":"id","quote":"frase literal"}]}.',
   'Sin nada que proponer ni cerrar: {"new":[],"resolved":[]}.',

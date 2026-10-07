@@ -1,11 +1,11 @@
 import {
   COMMON_DIR_ARGS, FETCH_ARGS, GIT_ENV, HASH_ARGS, NET_ENV, REF, REMOTE_ARGS, REMOTE_REF, SYNC_GET_ARGS, TREE_ARGS,
-  blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, mergeItems, pushArgs, sameItems, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
+  blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, turnLogArgs, mergeItems, pushArgs, sameItems, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
 } from '../lib/refstore.mjs'
 import {
   LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
   markDone, nextItem, parseItems, propose, proposeClose, prune, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
-  unwithdraw, withdraw,
+  heldCandidates, release, unwithdraw, withdraw,
 } from '../lib/items.mjs'
 import { rejectReason } from '../lib/filter.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
@@ -50,6 +50,12 @@ let notice = null
 let sync = null
 // When the current turn started (ISO); the commit the sweep offers as proof is the last one made since then.
 let turnStartedAt = null
+// Subagents whose turn started and has not ended; while any runs, what the sweep holds back stays held.
+const runningAgents = new Set()
+// Whether Claude noted a loose end by hand this turn; the sweep then only looks for closures.
+let notedThisTurn = false
+// How long the sweep holds a candidate back at most, whatever subagent still seems to run.
+const HOLD_MAX_MS = 30 * 60 * 1000
 // Cards the person answered under a message: id -> { kind, quote, state, previous }.
 const triage = new Map()
 let refreshTimer = null
@@ -505,6 +511,13 @@ async function commitSince($, since) {
   return r.exitCode === 0 ? firstLine(r.stdout) : null
 }
 
+// The commits of the session repo made since `since`, as «sha subject» lines; empty when there are none or git fails.
+async function logSince($, since) {
+  if (!sessionRepo || !since) return ''
+  const r = await $.process.run(['git', '-C', sessionRepo, ...turnLogArgs(since)])
+  return r.exitCode === 0 && typeof r.stdout === 'string' ? r.stdout.trim() : ''
+}
+
 // Repos the main loop touched this turn, once the lookups queued by `trackRepos` have finished.
 async function collectTouched($, set, paths, isFile) {
   for (const path of paths) {
@@ -521,18 +534,42 @@ function trackRepos($, e) {
   touchChain = touchChain.then(() => collectTouched($, set, paths, isFile)).catch(err => logDebug($, `loose-ends: resolver los repos tocados falló (${err?.message ?? err})`))
 }
 
-// Haiku reads the answer: new candidates only from long answers; in any answer, closures for the live items and
-// the candidates still waiting, which a later answer often shows done.
-async function sweep($, answer, touchedNow, commit) {
+// Haiku reads the answer: new candidates only from long answers and only when Claude noted nothing by hand; in any
+// answer, closures for the live items and the candidates still waiting, which a later answer often shows done. What
+// the sweep proposes is held back one turn: the next sweep withdraws it if it was done meanwhile, or shows it.
+async function sweep($, answer, touchedNow, commit, { allowNew, log = '' }) {
+  const held = heldCandidates(items).map(i => i.id)
+  const resolvedIds = new Set()
+  try {
+    await sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, resolvedIds)
+  } finally {
+    await releaseHeld($, held.filter(id => !resolvedIds.has(id)))
+  }
+}
+
+// The held candidates go to the person, unless a subagent still runs and they are younger than HOLD_MAX_MS.
+async function releaseHeld($, ids) {
+  if (!ids.length || !sessionRepo) return
+  const nowMs = await $.clock.now()
+  const ready = ids.filter(id => {
+    const item = items.find(i => i.id === id)
+    return item && (!runningAgents.size || nowMs - (Date.parse(item.createdAt) || 0) >= HOLD_MAX_MS)
+  })
+  if (!ready.length) return
+  const now = await nowIso($)
+  await guarded($, 'mostrar los candidatos del barrido', () => mutate($, list => release(list, ready, now)))
+}
+
+async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, resolvedIds) {
   const others = (await touchedNow).filter(repo => repo !== sessionRepo)
   if (!sessionRepo && !others.length) return
   const repos = others.length ? candidateRepos(sessionRepo, others) : []
   const open = live(items)
-  const waiting = candidates(items)
+  const waiting = [...candidates(items), ...heldCandidates(items)]
   const r = await $.model.complete({
     model: SWEEP_MODEL,
     system: SWEEP_SYSTEM,
-    prompt: buildSweepPrompt(answer, open, waiting, repos, rejectedTexts(items)),
+    prompt: buildSweepPrompt(answer, open, waiting, repos, rejectedTexts(items), log),
     maxTokens: 800,
     timeoutMs: 20000,
   })
@@ -540,7 +577,7 @@ async function sweep($, answer, touchedNow, commit) {
     await logDebug($, `loose-ends: barrido omitido (${r.reason})`)
     return
   }
-  const parsed = parseSweepReply(r.text, [...open, ...waiting].map(i => i.id), repos, answer, { allowNew: shouldSweep(answer) })
+  const parsed = parseSweepReply(r.text, [...open, ...waiting].map(i => i.id), repos, answer, { allowNew, log })
   if (!parsed) {
     await logDebug($, 'loose-ends: barrido con JSON inválido')
     return
@@ -551,7 +588,7 @@ async function sweep($, answer, touchedNow, commit) {
     const target = repo ?? sessionRepo
     if (!target) continue
     await guarded($, `proponer en ${target}`, async () => {
-      const out = await offer($, { ...fresh, source: 'sweep' }, target)
+      const out = await offer($, { ...fresh, source: 'sweep', held: true }, target)
       if (out.error) await logDebug($, `loose-ends: no se pudo proponer en ${target} (${out.error})`)
     })
   }
@@ -565,10 +602,14 @@ async function sweep($, answer, touchedNow, commit) {
         return { items: next, changed }
       })
       for (const { before, after } of res?.changed ?? []) {
+        resolvedIds.add(before.id)
         // a card's Deshacer would put back the item without the closure just proposed
         triage.delete(before.id)
-        // the withdrawn candidate's card says so under its message, and Deshacer brings it back to review
-        if (before.status === 'candidate' && after.status !== 'candidate' && before.evidence) {
+        // the withdrawn candidate's card says so under its message, and Deshacer brings it back to review; a held one
+        // was never shown, so it goes without a word
+        if (before.status === 'candidate' && after.status !== 'candidate' && before.held) {
+          await logDebug($, `loose-ends: candidato retenido retirado, resuelto después: ${before.text}`)
+        } else if (before.status === 'candidate' && after.status !== 'candidate' && before.evidence) {
           triage.set(before.id, { kind: 'candidate', quote: before.evidence, state: 'withdrawn', previous: before })
           await logDebug($, `loose-ends: candidato retirado, resuelto después: ${before.text}`)
         }
@@ -622,7 +663,7 @@ function triageCards(text) {
       cards.push({ kind: answered.kind, item, quote: answered.quote, state: answered.state })
       continue
     }
-    if (item.status === 'candidate' && item.evidence && containsQuote(text, item.evidence)) cards.push({ kind: 'candidate', item, quote: item.evidence, state: null })
+    if (item.status === 'candidate' && !item.held && item.evidence && containsQuote(text, item.evidence)) cards.push({ kind: 'candidate', item, quote: item.evidence, state: null })
     else if (item.proposal && containsQuote(text, item.proposal.quote)) cards.push({ kind: 'proposal', item, quote: item.proposal.quote, state: null })
   }
   return cards.map(c => ({ ...c, repoName: repoName(sessionRepo), editing: editing === c.item.id }))
@@ -763,6 +804,8 @@ export function register(on) {
     working = false
     flashUntil = 0
     turnStartedAt = null
+    runningAgents.clear()
+    notedThisTurn = false
     lastActivity = await $.clock.now()
     await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA })
     await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: cabos por revisar, abiertos y cerrados', immediate: true })
@@ -774,6 +817,8 @@ export function register(on) {
       branch = await readBranch($)
     })
     await guarded($, 'leer los cabos', () => load($))
+    // what an earlier session's sweep held back has had its turn: it goes to the person now
+    await releaseHeld($, heldCandidates(items).map(i => i.id))
     notice = null
     sync = null
     if (sessionRepo) background($, startSync($, sessionRepo), 'traer los cabos de origin')
@@ -806,6 +851,8 @@ export function register(on) {
 
   on('turn.start', async ($, e, next) => {
     working = true
+    if (e.agentId) runningAgents.add(e.agentId)
+    else notedThisTurn = false
     if (!e.agentId) turnStartedAt = await nowIso($)
     lastActivity = await $.clock.now()
     touched = new Set()
@@ -824,7 +871,10 @@ export function register(on) {
 
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
-    if (e.agentId) return r
+    if (e.agentId) {
+      runningAgents.delete(e.agentId)
+      return r
+    }
     working = false
     recapNow = null
     firstTurnDone = true
@@ -843,19 +893,23 @@ export function register(on) {
       $.clock.after(500, () => pressNow($, id))
     } else if (suggestable(items)) $.clock.after(500, () => background($, suggestUrgent($), 'sugerir el cabo urgente'))
     if (e.reason === 'answer' && typeof e.answer === 'string' && e.answer.trim()) {
-      if (shouldSweep(e.answer) || live(items).some(i => i.status === 'doing') || candidates(items).length) {
+      const allowNew = shouldSweep(e.answer) && !notedThisTurn
+      if (allowNew || live(items).some(i => i.status === 'doing') || items.some(i => i.status === 'candidate')) {
         const set = touched
         let commit = null
+        let log = ''
         await guarded($, 'leer el commit del turno', async () => {
           commit = await commitSince($, turnStartedAt)
+          if (commit) log = await logSince($, turnStartedAt)
         })
-        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit), 'el barrido')
+        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit, { allowNew, log }), 'el barrido')
       }
     }
     return r
   })
 
   on('tool.call', { tool: 'mcp__loose-ends__note_loose_end' }, async ($, e) => {
+    notedThisTurn = true
     if (String(e.text ?? '').trim().length < 3) return { result: TOOL_TOO_SHORT }
     let target = sessionRepo
     if (typeof e.repo === 'string' && e.repo.trim()) {

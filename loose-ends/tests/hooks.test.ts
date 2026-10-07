@@ -110,6 +110,84 @@ test('↺ in the pane brings a withdrawn candidate back to review', async ($, on
   await ui.unmount()
 })
 
+test('a sweep candidate is held one turn: no card, no count; the next sweep shows it', async ($, on) => {
+  const w = world(on)
+  drawEngine(on)
+  let reply = `{"new":[{"text":"Comprimir la foto 3","category":"mejora","priority":"low","evidence":"${EVIDENCE}"}],"resolved":[]}`
+  on('model.complete', () => answered(reply))
+  turns(on)
+  await w.start($)
+  await endTurn($)
+  await w.clock.settle()
+  const held = w.saved().find((i: any) => i.text === 'Comprimir la foto 3')
+  expect(held).toMatchObject({ status: 'candidate', held: true })
+  const msg = await message($, `Eso sí, ${EVIDENCE}.`)
+  expect(await msg.find({ key: `tri-save-${held.id}` })).toBeUndefined()
+  reply = '{"new":[],"resolved":[]}'
+  await endTurn($, 'corto', 't2')
+  await w.clock.settle()
+  expect(find(w, held.id).held).toBeUndefined()
+  await msg.redraw()
+  expect(await msg.find({ key: `tri-save-${held.id}` })).toBeDefined()
+  await msg.unmount()
+})
+
+test('a held candidate the next answer shows done is withdrawn without a card', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('h1', 'Comprimir la foto 3', { status: 'candidate', held: true, evidence: EVIDENCE })) } })
+  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"h1","quote":"${EVIDENCE_2}"}]}`))
+  turns(on)
+  await w.start($)
+  // a new session shows what an earlier one held: put it back on hold for this test
+  w.setRef(ROOT, blob(it('h1', 'Comprimir la foto 3', { status: 'candidate', held: true, evidence: EVIDENCE })))
+  await endTurn($, `corto: ${EVIDENCE_2}`)
+  await w.clock.settle()
+  expect(find(w, 'h1')).toMatchObject({ status: 'expired', withdrawn: true })
+})
+
+test('while a subagent runs, held candidates stay held; once it ends, they show', async ($, on) => {
+  const w = world(on)
+  let reply = `{"new":[{"text":"Comprimir la foto 3","category":"mejora","priority":"low","evidence":"${EVIDENCE}"}],"resolved":[]}`
+  on('model.complete', () => answered(reply))
+  turns(on)
+  await w.start($)
+  await $.turn.start({ text: 'sub', turnId: 's', agentId: 'sub1' } as any)
+  await endTurn($)
+  await w.clock.settle()
+  reply = '{"new":[],"resolved":[]}'
+  await endTurn($, 'corto', 't2')
+  await w.clock.settle()
+  const id = w.saved().find((i: any) => i.text === 'Comprimir la foto 3').id
+  expect(find(w, id).held).toBe(true)
+  await $.turn.complete({ answer: 'hecho', durationMs: 10, isAborted: false, turnId: 's', reason: 'answer', agentId: 'sub1' } as any)
+  await endTurn($, 'corto', 't3')
+  await w.clock.settle()
+  expect(find(w, id).held).toBeUndefined()
+})
+
+test('a session start shows what an earlier session held', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('h1', 'Comprimir la foto 3', { status: 'candidate', held: true, evidence: EVIDENCE })) } })
+  await w.start($)
+  await w.clock.settle()
+  expect(find(w, 'h1').held).toBeUndefined()
+})
+
+test('a turn where Claude noted a loose end by hand brings no new items from the sweep', async ($, on) => {
+  const w = world(on)
+  let asked = 0
+  on('model.complete', () => {
+    asked++
+    return answered(`{"new":[{"text":"Comprimir la foto 3","category":"mejora","priority":"low","evidence":"${EVIDENCE}"}],"resolved":[]}`)
+  })
+  turns(on)
+  await w.start($)
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  await $.tool.call({ tool: TOOL, text: 'Corregir el envío duplicado de correo', category: 'bug', priority: 'high' })
+  await endTurn($)
+  await w.clock.settle()
+  expect(asked).toBe(1)
+  expect(w.saved().map((i: any) => i.text)).toEqual(['Corregir el envío duplicado de correo'])
+})
+
 test('the last commit made since the turn started goes into the proposal, whatever the command was', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Tipar drafts')) }, head: 'a3f9c21' })
   on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"a1","quote":"${EVIDENCE_2}"}]}`))
@@ -120,6 +198,19 @@ test('the last commit made since the turn started goes into the proposal, whatev
   await w.clock.settle()
   expect(find(w, 'a1').proposal).toMatchObject({ quote: EVIDENCE_2, commit: 'a3f9c21' })
   expect(w.runs.some(a => a.includes('--since=2026-10-04T10:00:00.000Z'))).toBe(true)
+})
+
+test('a waiting candidate a commit of the turn resolves is withdrawn with that commit', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: withCandidate() }, head: 'a3f9c21', log: 'a3f9c21 perf: comprimir la foto 3 al subirla\n' })
+  let asked = ''
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[],"resolved":[{"id":"c1","quote":"perf: comprimir la foto 3 al subirla"}]}') })
+  turns(on)
+  await w.start($)
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  await endTurn($, 'corto')
+  await w.clock.settle()
+  expect(asked).toContain('Commits de este turno:\n- a3f9c21 perf: comprimir la foto 3 al subirla')
+  expect(find(w, 'c1')).toMatchObject({ status: 'expired', withdrawn: true, proof: { commit: 'a3f9c21' } })
 })
 
 test('a turn without a commit leaves the proposal without one', async ($, on) => {

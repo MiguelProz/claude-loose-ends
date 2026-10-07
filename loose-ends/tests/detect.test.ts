@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { MIN_ANSWER, buildSweepPrompt, containsQuote, parseSweepReply, sentenceAround, sentenceVerdict, shouldSweep } from '../lib/detect.mjs'
+import { MIN_ANSWER, buildSweepPrompt, containsQuote, parseSweepReply, sentenceAround, sentenceVerdict, shouldSweep, sweepPriority } from '../lib/detect.mjs'
 import {
   NOT_A_REPO, SUGGEST_PREFIX, SWEEP_SYSTEM, TOOL_GUIDE, TOOL_ID, TOOL_SCHEMA, doNowText, formatContext, passingText, suggestText, toolProposed, toolRejected, toolUnreadable,
 } from '../lib/texts.mjs'
@@ -48,7 +48,7 @@ describe('sweep reply', () => {
     const reply = 'Aquí va:\n{"new":[{"text":"  Añadir test de canonical ","category":"test","priority":"high","evidence":"lo dejo fuera del alcance"},{"text":"x"},{"text":"Sin prioridad","category":"tarea","evidence":"el test lo omito por ahora"}],"resolved":[]}'
     expect(parseSweepReply(reply, [], [], ANSWER)).toEqual({
       fresh: [
-        { text: 'Añadir test de canonical', category: 'test', priority: 'high', evidence: 'lo dejo fuera del alcance', repo: undefined },
+        { text: 'Añadir test de canonical', category: 'test', priority: 'low', evidence: 'lo dejo fuera del alcance', repo: undefined },
         { text: 'Sin prioridad', category: undefined, priority: 'medium', evidence: 'el test lo omito por ahora', repo: undefined },
       ],
       resolved: [],
@@ -100,6 +100,15 @@ describe('sweep reply', () => {
     const parsed = parseSweepReply(reply, ['a1', 'b2', 'c3'], [], ANSWER)
     expect(parsed?.resolved).toEqual([{ id: 'a1', quote: EVIDENCE }])
     expect(parsed?.dropped).toBe(1)
+  })
+  test('a closure may quote a commit of the turn; a new item may not', () => {
+    const LOG = 'a3f9c21 fix: comprimir la foto 3 antes de subirla'
+    const reply = JSON.stringify({ new: [{ text: 'Nuevo', category: 'bug', evidence: 'comprimir la foto 3 antes de subirla' }], resolved: [{ id: 'a1', quote: 'fix: comprimir la foto 3 antes de subirla' }] })
+    const parsed = parseSweepReply(reply, ['a1'], [], ANSWER, { log: LOG })
+    expect(parsed?.resolved).toEqual([{ id: 'a1', quote: 'fix: comprimir la foto 3 antes de subirla' }])
+    expect(parsed?.fresh).toEqual([])
+    expect(parseSweepReply(reply, ['a1'], [], ANSWER)?.resolved).toEqual([])
+    expect(buildSweepPrompt('r', [], [], [], [], LOG)).toContain('Commits de este turno:\n- a3f9c21 fix: comprimir la foto 3 antes de subirla\n\nRespuesta del asistente:')
   })
   test('allowNew false keeps only the closures', () => {
     const reply = JSON.stringify({ new: [{ text: 'Nuevo', category: 'bug', evidence: EVIDENCE }], resolved: [{ id: 'a1', quote: EVIDENCE_2 }] })
@@ -163,6 +172,20 @@ describe('the whole sentence', () => {
       { text: 'Arreglar el panel en Safari', reason: 'la frase dice que ya está hecho' },
       { text: 'Invalidar el caché', reason: 'la frase dice que se está haciendo' },
     ])
+  })
+})
+
+describe('sweep priority', () => {
+  test('the sweep never says high; what is put off on purpose is low', () => {
+    expect(sweepPriority('high', 'esto rompe el login')).toBe('medium')
+    expect(sweepPriority('medium', 'esto rompe el login')).toBe('medium')
+    expect(sweepPriority('low', null)).toBe('low')
+    expect(sweepPriority('high', 'lo dejo para más adelante')).toBe('low')
+    expect(sweepPriority('medium', 'queda fuera del plan, fase 5')).toBe('low')
+  })
+  test('a parsed candidate gets the calibrated priority', () => {
+    const reply = JSON.stringify({ new: [{ text: 'Tipar drafts', category: 'bug', priority: 'high', evidence: EVIDENCE_2 }], resolved: [] })
+    expect(fresh(reply)?.[0].priority).toBe('medium')
   })
 })
 

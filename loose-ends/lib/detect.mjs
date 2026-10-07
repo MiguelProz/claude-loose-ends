@@ -17,12 +17,13 @@ function fenceSafe(text) {
 
 // What Haiku reads: the live items it may close (with ids), what waits for the person and what the person
 // rejected (so it proposes neither again), the candidate repos when another repo was touched, and the fenced answer.
-export function buildSweepPrompt(answer, liveItems, waiting = [], candidates = [], rejected = []) {
+export function buildSweepPrompt(answer, liveItems, waiting = [], candidates = [], rejected = [], log = '') {
   const list = liveItems.length ? liveItems.map(i => `- ${i.id}: ${i.text}`).join('\n') : '(ninguno)'
   const queue = waiting.length ? `Por revisar (no los repitas; si la respuesta los deja hechos, van en "resolved"):\n${waiting.map(i => `- ${i.id}: ${i.text}`).join('\n')}\n\n` : ''
   const no = rejected.length ? `Ejemplos que el usuario rechazó (no propongas nada parecido):\n${rejected.map(t => `- ${t}`).join('\n')}\n\n` : ''
   const repos = candidates.length ? `Repos candidatos:\n${formatCandidates(candidates)}\n\n` : ''
-  return `Cabos abiertos:\n${list}\n\n${queue}${no}${repos}Respuesta del asistente:\n<<<\n${fenceSafe(answer.slice(0, 12000))}\n>>>`
+  const commits = log.trim() ? `Commits de este turno:\n${log.trim().split('\n').map(l => `- ${fenceSafe(l)}`).join('\n')}\n\n` : ''
+  return `Cabos abiertos:\n${list}\n\n${queue}${no}${repos}${commits}Respuesta del asistente:\n<<<\n${fenceSafe(answer.slice(0, 12000))}\n>>>`
 }
 
 // Index one past the "}" that closes the object opening at `start`, or -1. Braces inside JSON strings do not count.
@@ -129,6 +130,15 @@ const UNDER_WAY = /\b(he lanzado|lanzo (un|dos|tres|los|el|varios)|estoy lanzand
 // A choice left to the person.
 const DECISION = /\b(es decision tuya|decision tuya|decides tu|te lo pregunto|decidir si)\b/
 
+// Put off on purpose: later, another phase, outside the plan.
+const DEFERRED = /\b(mas adelante|para luego|otro momento|otro dia|en el futuro|fase \d+|fuera del plan|fuera de alcance|fuera del alcance)\b/
+
+// The sweep never says urgent: what it reads is high at most medium, and what is put off on purpose is low.
+export function sweepPriority(priority, sentence) {
+  if (typeof sentence === 'string' && DEFERRED.test(plain(sentence))) return 'low'
+  return priority === 'low' ? 'low' : 'medium'
+}
+
 // Why the sentence holding a quote says it is not a loose end, or null.
 export function sentenceVerdict(sentence) {
   if (typeof sentence !== 'string') return null
@@ -141,7 +151,7 @@ export function sentenceVerdict(sentence) {
   return null
 }
 
-export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '', { allowNew = true } = {}) {
+export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '', { allowNew = true, log = '' } = {}) {
   const data = firstJsonObject(text)
   if (!data) return null
   const repos = new Set(candidatePaths)
@@ -150,6 +160,9 @@ export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '',
     const needle = typeof quote === 'string' ? normalizeEvidence(quote) : ''
     return needle.length >= MIN_EVIDENCE && haystack.includes(needle) ? needle : null
   }
+  // a closure may also quote the subject of a commit of the turn
+  const commits = normalize(typeof log === 'string' ? log : '')
+  const proven = quote => literal(quote) ?? (typeof quote === 'string' && normalizeEvidence(quote).length >= MIN_EVIDENCE && commits.includes(normalizeEvidence(quote)) ? quote : null)
   let notLiteral = 0
   const skipped = []
   const seen = new Set()
@@ -164,7 +177,8 @@ export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '',
       }
       if (seen.has(needle)) return false
       seen.add(needle)
-      const reason = sentenceVerdict(sentenceAround(answer, x.evidence))
+      x.sentence = sentenceAround(answer, x.evidence)
+      const reason = sentenceVerdict(x.sentence)
       if (reason) {
         skipped.push({ text: x.text.trim(), reason })
         return false
@@ -174,7 +188,7 @@ export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '',
   const fresh = quoted.slice(0, MAX_NEW).map(x => ({
     text: x.text.trim().slice(0, 300),
     category: CATEGORIES.includes(x.category) ? x.category : undefined,
-    priority: PRIORITIES.includes(x.priority) ? x.priority : 'medium',
+    priority: sweepPriority(PRIORITIES.includes(x.priority) ? x.priority : 'medium', x.sentence),
     evidence: cleanEvidence(x.evidence).slice(0, 400),
     repo: typeof x.repo === 'string' && repos.has(x.repo) ? x.repo : undefined,
   }))
@@ -183,7 +197,7 @@ export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '',
   const resolved = []
   for (const r of Array.isArray(data.resolved) ? data.resolved : []) {
     if (!r || typeof r.id !== 'string' || !known.has(r.id) || closed.has(r.id)) continue
-    if (!literal(r.quote)) {
+    if (!proven(r.quote)) {
       notLiteral++
       continue
     }

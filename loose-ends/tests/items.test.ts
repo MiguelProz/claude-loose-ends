@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
   CATEGORIES, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live, nextItem,
-  markDone, parseItems, propose, proposeClose, withdraw, unwithdraw, isWithdrawn, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap, prune, CLOSED_RETENTION_MS, REJECTED_KEEP,
+  markDone, parseItems, propose, proposeClose, withdraw, unwithdraw, isWithdrawn, heldCandidates, release, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap, prune, CLOSED_RETENTION_MS, REJECTED_KEEP,
 } from '../lib/items.mjs'
 
 const T0 = '2026-10-04T10:00:00.000Z'
@@ -108,6 +108,16 @@ describe('transitions', () => {
     expect(get(back).withdrawn).toBeUndefined()
     expect(get(back).proof).toBeUndefined()
     expect(unwithdraw(one(), 'c1', T1)).toEqual(one())
+  })
+  test('a held candidate waits out of sight until release', () => {
+    const held = propose([], input({ held: true })).items
+    expect(candidates(held)).toEqual([])
+    expect(heldCandidates(held).map(i => i.id)).toEqual(['c1'])
+    expect(counts(held).candidates).toBe(0)
+    const shown = release(held, ['c1'], T1)
+    expect(get(shown).held).toBeUndefined()
+    expect(candidates(shown).map(i => i.id)).toEqual(['c1'])
+    expect(release(one(), ['c1'], T1)).toEqual(one())
   })
   test('setPriority, editText and touch', () => {
     const open = save(one(), 'c1', T0)

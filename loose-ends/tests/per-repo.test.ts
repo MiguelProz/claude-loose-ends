@@ -87,7 +87,7 @@ test('the session repo is refreshed after each turn', async ($, on) => {
 test('the sweep files a new item in a repo touched this turn when Haiku names it', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, branches: { '/other': 'feat/o' }, refs: { [ROOT]: own } })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"y el test lo omito por ahora"}]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Tipar el parser de fechas","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"y el test lo omito por ahora"}]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -97,7 +97,7 @@ test('the sweep files a new item in a repo touched this turn when Haiku names it
   await w.clock.settle()
   expect(asked).toContain('Repos candidatos:\n- proj: /proj\n- other: /other')
   expect(w.savedAt(OTHER).map((i: any) => [i.text, i.branch, i.source])).toEqual([['Cabo para el otro', 'feat/o', 'sweep']])
-  expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Cabo para la sesión', 'candidate']])
+  expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Tipar el parser de fechas', 'candidate']])
   expect(w.saved()[0].proposal.quote).toBe('y el test lo omito por ahora')
 })
 
@@ -107,7 +107,7 @@ test('a candidate the sweep cannot file in one repo does not stop the rest of th
   on('model.complete', () => {
     // the other repo goes away while Haiku answers: every git call there fails
     missing.push(OTHER)
-    return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Cabo para la sesión","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"y el test lo omito por ahora"}]}')
+    return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Tipar el parser de fechas","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"y el test lo omito por ahora"}]}')
   })
   tools(on)
   turns(on)
@@ -116,7 +116,7 @@ test('a candidate the sweep cannot file in one repo does not stop the rest of th
   await $.tool.call({ tool: 'Edit', file_path: '/other/src/a.ts' })
   await endTurn($)
   await w.clock.settle()
-  expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Cabo para la sesión', 'candidate']])
+  expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Tipar el parser de fechas', 'candidate']])
   expect(w.saved()[0].proposal.quote).toBe('y el test lo omito por ahora')
   expect(w.logs.some(l => l.includes('/other') && l.includes('falló'))).toBe(true)
 })
@@ -463,7 +463,7 @@ const WIN_OTHER = 'C:/Users/x/other'
 test('Windows: a drive-letter session repo and touched repo, HOME from USERPROFILE', async ($, on) => {
   const w = world(on, {}, { repos: { [WIN]: WIN, [WIN_OTHER]: WIN_OTHER, 'C:/Users/x': 'C:/Users/x' }, root: 'C:\\Users\\x\\proj\\src', home: null, userProfile: 'C:\\Users\\x' })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"C:/Users/x/other"},{"text":"Cabo para la sesión","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"C:/Users/x/other"},{"text":"Tipar el parser de fechas","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -472,7 +472,7 @@ test('Windows: a drive-letter session repo and touched repo, HOME from USERPROFI
   await endTurn($)
   await w.clock.settle()
   expect(asked).toContain(`Repos candidatos:\n- proj: ${WIN}\n- other: ${WIN_OTHER}`)
-  expect(w.savedAt(WIN).map((i: any) => i.text)).toEqual(['Cabo para la sesión'])
+  expect(w.savedAt(WIN).map((i: any) => i.text)).toEqual(['Tipar el parser de fechas'])
   expect(w.savedAt(WIN_OTHER).map((i: any) => i.text)).toEqual(['Cabo para el otro'])
   const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo por ruta', priority: 'low', repo: 'C:\\Users\\x\\other\\src\\b.ts' })
   expect(String(r.result)).toMatch(/^Propuesto como cabo/)

@@ -62,6 +62,7 @@ function fields(input) {
     source: input.source,
     evidence: input.evidence ? String(input.evidence).slice(0, 400) : undefined,
     file: input.file || undefined,
+    held: input.held ? true : undefined,
     branch: input.branch ?? null,
     createdAt: input.now,
     updatedAt: input.now,
@@ -150,7 +151,14 @@ const priorityOf = item => (Object.hasOwn(RANK, item.priority) ? item.priority :
 const byRank = (a, b) => RANK[priorityOf(a)] - RANK[priorityOf(b)]
 const byPriority = (a, b) => byRank(a, b) || created(a) - created(b)
 
-export const candidates = items => items.filter(i => i.status === 'candidate').sort((a, b) => created(a) - created(b))
+// What waits for the person; a candidate the sweep holds back a turn is not shown yet.
+export const candidates = items => items.filter(i => i.status === 'candidate' && !i.held).sort((a, b) => created(a) - created(b))
+export const heldCandidates = items => items.filter(i => i.status === 'candidate' && i.held).sort((a, b) => created(a) - created(b))
+// The held candidates with these ids go to the person.
+export function release(items, ids, now) {
+  const set = new Set(ids)
+  return items.map(i => (set.has(i.id) && i.status === 'candidate' && i.held ? { ...i, held: undefined, updatedAt: now } : i))
+}
 export const live = items => items.filter(i => LIVE.has(i.status)).sort(byPriority)
 export const isStale = (item, now) => LIVE.has(item.status) && now - touched(item) >= STALE_MS
 
@@ -186,7 +194,7 @@ export function nextItem(items) {
 // The urgent item the prompt may propose: one still open (not started) with no closure waiting, and only while no
 // candidate waits for the person.
 export function suggestable(items) {
-  if (items.some(i => i.status === 'candidate')) return null
+  if (candidates(items).length) return null
   return live(items).find(i => i.priority === 'high' && i.status === 'open' && !i.proposal) ?? null
 }
 
@@ -203,7 +211,7 @@ export function recap(items, seen) {
   const wasLive = new Set(seen.live)
   return {
     at: seen.at,
-    fresh: items.filter(i => !known.has(i.id) && (i.status === 'candidate' || LIVE.has(i.status))).length,
+    fresh: items.filter(i => !known.has(i.id) && ((i.status === 'candidate' && !i.held) || LIVE.has(i.status))).length,
     closed: items.filter(i => wasLive.has(i.id) && (i.status === 'done' || i.status === 'dismissed')).length,
   }
 }

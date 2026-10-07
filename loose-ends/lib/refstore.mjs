@@ -32,6 +32,8 @@ export const syncSetArgs = on => ['config', 'loose-ends.sync', on ? 'true' : 'fa
 export const COMMON_DIR_ARGS = ['rev-parse', '--path-format=absolute', '--git-common-dir']
 // The last commit of HEAD made since `since` (an ISO timestamp); prints nothing when there is none.
 export const lastCommitArgs = since => ['log', '-1', `--since=${since}`, '--format=%h']
+// The commits of a turn, newest first, as «sha subject»: the sweep may quote one as the proof of a closure.
+export const turnLogArgs = since => ['log', '-5', `--since=${since}`, '--format=%h %s']
 
 // First line of a git answer, trimmed; null when there is none.
 export function firstLine(stdout) {

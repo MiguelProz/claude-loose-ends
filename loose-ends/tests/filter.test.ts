@@ -16,12 +16,14 @@ describe('words and banned openings', () => {
     expect(startsBanned('Ejecutar npm run holidays:sync en producción')).toBe(true)
     expect(startsBanned('Enviar la plantilla a Meta')).toBe(true)
     expect(startsBanned('Probar en el navegador el panel')).toBe(true)
+    expect(startsBanned('Fusionar y subir a main los commits de la rama')).toBe(true)
   })
   test('the same words later in the sentence, or other forms, are not caught', () => {
     expect(startsBanned('Corregir la verificación de la firma')).toBe(false)
     expect(startsBanned('Revisión pendiente del parser')).toBe(false)
     expect(startsBanned('Hacer pushes atómicos en la cola')).toBe(false)
     expect(startsBanned('Subir la cobertura del parser')).toBe(false)
+    expect(startsBanned('Fusionar las dos funciones de fechas')).toBe(false)
     expect(startsBanned('')).toBe(false)
   })
 })
@@ -57,6 +59,11 @@ describe('rejectReason', () => {
     const items = [it('a', 'Corregir el envío duplicado del correo', { file: 'lib/facturas.ts' })]
     expect(rejectReason(cand({ file: 'lib/facturas.ts' }), items)).toBe('se parece a otro cabo del mismo fichero')
     expect(rejectReason(cand({ file: 'lib/otro.ts' }), items)).toBe(null)
+  })
+  test('a sweep candidate similar to anything in the queue, whatever the file', () => {
+    const items = [it('a', 'Corregir el envío duplicado del correo de facturas', { status: 'candidate', source: 'tool' })]
+    expect(rejectReason(cand({ source: 'sweep' }), items)).toBe('se parece a otro cabo')
+    expect(rejectReason(cand({ source: 'tool' }), items)).toBe(null)
   })
   test('similar to one of the last 50 rejected', () => {
     const rejected = [it('r', 'Corregir el envío duplicado del correo', { status: 'rejected', closedAt: T0 })]
