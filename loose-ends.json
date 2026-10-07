@@ -346,6 +346,19 @@
       "createdAt": "2026-10-07T21:43:52.322Z",
       "updatedAt": "2026-10-07T21:43:52.322Z",
       "status": "candidate"
+    },
+    {
+      "id": "b993e9eb",
+      "text": "Corregir en media/social-preview.png el hueco entre la nota y el cuerpo de Chispa que parece una franja negra",
+      "category": "bug",
+      "priority": "medium",
+      "source": "sweep",
+      "evidence": "entre la nota y el cuerpo de Chispa queda un hueco que parece una franja negra",
+      "held": true,
+      "branch": "master",
+      "createdAt": "2026-10-07T21:43:52.409Z",
+      "updatedAt": "2026-10-07T21:43:52.409Z",
+      "status": "candidate"
     }
   ]
 }
