@@ -16,7 +16,7 @@ import {
 import { FLASH_MS, bashFailed, chispaMood, isCommit, isPush } from '../lib/mood.mjs'
 import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, relativeTo, repoName } from '../lib/repos.mjs'
 import { emphasize, renderBand, renderPane, renderTriage, sinceText } from '../lib/screens.mjs'
-import { pickLanguage } from '../lib/i18n.mjs'
+import { pickLanguage, t, tn } from '../lib/i18n.mjs'
 
 const MAX_WALK = 3
 const MAX_CACHE = 500
@@ -24,7 +24,6 @@ const MAX_PATHS_PER_CALL = 10
 const MAX_TOUCHED = 6
 const MAX_TRIES = 3
 const NEXT_PRIORITY = { high: 'medium', medium: 'low', low: 'high' }
-const SYNC_QUESTION = '¿Subo también los cabos sueltos de este repo a origin? Viajan en refs/loose-ends, fuera de tus ramas.'
 
 let items = []
 let fileError = null
@@ -95,7 +94,7 @@ async function logDebug($, message) {
 }
 
 function background($, promise, what) {
-  promise.catch(err => logDebug($, `loose-ends: ${what} falló (${err?.message ?? err})`))
+  promise.catch(err => logDebug($, `loose-ends: ${what} failed (${err?.message ?? err})`))
 }
 
 // Runs one step that must not break the hook: a failure is logged and the next step still runs.
@@ -103,7 +102,7 @@ async function guarded($, what, step) {
   try {
     await step()
   } catch (err) {
-    await logDebug($, `loose-ends: ${what} falló (${err?.message ?? err})`)
+    await logDebug($, `loose-ends: ${what} failed (${err?.message ?? err})`)
   }
 }
 
@@ -127,13 +126,13 @@ async function readRef($, root, ref = REF) {
 async function writeRef($, root, list, prev) {
   const blob = await $.process.run(['git', '-C', root, ...HASH_ARGS], { stdin: serializeItems(list) })
   const blobSha = blob.exitCode === 0 ? firstLine(blob.stdout) : null
-  if (!blobSha) throw new Error('git hash-object falló')
+  if (!blobSha) throw new Error('git hash-object failed')
   const tree = await $.process.run(['git', '-C', root, ...TREE_ARGS], { stdin: treeInput(blobSha) })
   const treeSha = tree.exitCode === 0 ? firstLine(tree.stdout) : null
-  if (!treeSha) throw new Error('git mktree falló')
+  if (!treeSha) throw new Error('git mktree failed')
   const commit = await $.process.run(['git', '-C', root, ...commitArgs(treeSha, prev)], { env: GIT_ENV })
   const commitSha = commit.exitCode === 0 ? firstLine(commit.stdout) : null
-  if (!commitSha) throw new Error('git commit-tree falló')
+  if (!commitSha) throw new Error('git commit-tree failed')
   const moved = await $.process.run(['git', '-C', root, ...updateArgs(commitSha, prev)])
   return moved.exitCode === 0
 }
@@ -203,7 +202,7 @@ async function mutateNow($, fn, root, report) {
 function adopt($, list, moved) {
   fileError = null
   items = list
-  if (moved && seenReady) background($, recordSeen($, sessionRepo, { compare: false }), 'apuntar lo visto del repo')
+  if (moved && seenReady) background($, recordSeen($, sessionRepo, { compare: false }), 'record what this session sees of the repo')
   if (editing && !items.some(i => i.id === editing)) editing = null
   $.ui.invalidate('ui.render')
 }
@@ -218,7 +217,7 @@ async function toplevelOf($, dir) {
   const r = await $.process.run(['git', '-C', dir, 'rev-parse', '--show-toplevel'])
   if (r.exitCode !== 0) return null
   const top = typeof r.stdout === 'string' ? r.stdout.trim() : ''
-  if (!isAbsolutePath(top)) throw new Error('git no dio la raíz del repo')
+  if (!isAbsolutePath(top)) throw new Error('git did not give the repo root')
   return normalizePath(top)
 }
 
@@ -350,16 +349,16 @@ async function pullRemote($, root) {
     fetched = await $.process.run(['git', '-C', root, ...FETCH_ARGS], { timeoutMs: 20000, env: NET_ENV })
   } catch (err) {
     // a fetch that outlasts its timeout rejects; it counts as one that failed
-    await logDebug($, `loose-ends: no se pudieron traer los cabos de origin (${err?.message ?? err})`)
+    await logDebug($, `loose-ends: could not fetch the loose ends from origin (${err?.message ?? err})`)
     return { ok: true, lease: null }
   }
   if (fetched.exitCode !== 0) {
-    await logDebug($, 'loose-ends: no se pudieron traer los cabos de origin')
+    await logDebug($, 'loose-ends: could not fetch the loose ends from origin')
     return { ok: true, lease: null }
   }
   const theirs = await readRef($, root, REMOTE_REF)
   if (!theirs.ok) {
-    await logDebug($, `loose-ends: los cabos de origin no se pueden leer (${theirs.error})`)
+    await logDebug($, `loose-ends: the loose ends on origin cannot be read (${theirs.error})`)
     return { ok: false, lease: null }
   }
   const run = writeChain.then(() => mergeRemoteNow($, root, theirs))
@@ -368,7 +367,7 @@ async function pullRemote($, root) {
   try {
     ok = await run
   } catch (err) {
-    await logDebug($, `loose-ends: fusionar los cabos de origin falló (${err?.message ?? err})`)
+    await logDebug($, `loose-ends: merging the loose ends from origin failed (${err?.message ?? err})`)
   }
   return { ok, lease: theirs.sha }
 }
@@ -383,7 +382,7 @@ async function pushRemote($, root) {
       sync = 'failed'
       $.ui.invalidate('ui.render')
     }
-    await logDebug($, 'loose-ends: no se suben los cabos porque no se pudieron fusionar con los de origin')
+    await logDebug($, 'loose-ends: not pushing the loose ends because they could not be merged with the ones on origin')
     return
   }
   const lease = pulled?.lease ?? null
@@ -403,7 +402,7 @@ async function pushRemote($, root) {
         sync = 'failed'
         $.ui.invalidate('ui.render')
       }
-      await logDebug($, `loose-ends: no se pudieron subir los cabos a origin${why}`)
+      await logDebug($, `loose-ends: could not push the loose ends to origin${why}`)
       return
     }
     await $.process.run(['git', '-C', root, ...trackArgs(mine)])
@@ -424,13 +423,16 @@ async function afterUserPush($) {
   const mode = pref.exitCode === 0 ? firstLine(pref.stdout) : null
   if (mode === 'false') return
   if (mode !== 'true') {
-    const answer = await $.ui.ask(SYNC_QUESTION, { options: ['Siempre', 'Esta vez', 'Nunca'], header: 'Cabos' })
-    if (answer === 'Nunca') {
+    const always = t(lang, 'push.always')
+    const once = t(lang, 'push.once')
+    const never = t(lang, 'push.never')
+    const answer = await $.ui.ask(t(lang, 'push.question'), { options: [always, once, never], header: t(lang, 'push.header') })
+    if (answer === never) {
       await $.process.run(['git', '-C', root, ...syncSetArgs(false)])
       return
     }
-    if (answer === 'Siempre') await $.process.run(['git', '-C', root, ...syncSetArgs(true)])
-    else if (answer !== 'Esta vez') return
+    if (answer === always) await $.process.run(['git', '-C', root, ...syncSetArgs(true)])
+    else if (answer !== once) return
   }
   await pushRemote($, root)
 }
@@ -447,19 +449,19 @@ async function importLegacy($, root) {
     return { items: fresh.length ? [...list, ...fresh] : list, added: fresh.length }
   }, root)
   // only an import that was written may tell the person to delete the file
-  if (res?.added && root === sessionRepo) notice = `Importados ${res.added} ${res.added === 1 ? 'cabo' : 'cabos'} de ${LEGACY_FILE}. Ya puedes borrar el fichero del repo.`
+  if (res?.added && root === sessionRepo) notice = tn(lang, 'notice.imported', res.added, { file: LEGACY_FILE })
 }
 
 // At session start: the 0.3 file, then origin, then where the ref stands; a failing step does not skip the next.
 async function startSync($, root) {
-  await guarded($, 'importar .claude/loose-ends.json', () => importLegacy($, root))
-  await guarded($, 'traer los cabos de origin', () => pullRemote($, root))
-  await guarded($, 'ver si hay cabos sin subir', async () => {
+  await guarded($, 'import .claude/loose-ends.json', () => importLegacy($, root))
+  await guarded($, 'fetch the loose ends from origin', () => pullRemote($, root))
+  await guarded($, 'check for unpushed loose ends', async () => {
     if (root !== sessionRepo) return
     sync = await refreshSync($, root)
     $.ui.invalidate('ui.render')
   })
-  if (root === sessionRepo) await guarded($, 'comparar con lo que vio la última sesión', () => recordSeen($, root, { compare: true }))
+  if (root === sessionRepo) await guarded($, 'compare with what the last session saw', () => recordSeen($, root, { compare: true }))
 }
 
 async function seenPath($, root) {
@@ -517,7 +519,7 @@ async function offer($, input, target) {
   }, target, report)
   if (report.error) return { error: report.error }
   if (reason) {
-    await logDebug($, `loose-ends: candidato rechazado (${rejectText(lang, reason)}): ${input.text}`)
+    await logDebug($, `loose-ends: candidate rejected (${rejectText(lang, reason)}): ${input.text}`)
     return { reason }
   }
   return res?.added ? { added: res.added } : { reason: 'tooShort' }
@@ -550,7 +552,7 @@ function trackRepos($, e) {
   if (!paths.length) return
   const set = touched
   const isFile = FILE_TOOLS.has(e.tool)
-  touchChain = touchChain.then(() => collectTouched($, set, paths, isFile)).catch(err => logDebug($, `loose-ends: resolver los repos tocados falló (${err?.message ?? err})`))
+  touchChain = touchChain.then(() => collectTouched($, set, paths, isFile)).catch(err => logDebug($, `loose-ends: resolving the touched repos failed (${err?.message ?? err})`))
 }
 
 // Haiku reads the answer: new candidates only from long answers and only when Claude noted nothing by hand; in any
@@ -576,7 +578,7 @@ async function releaseHeld($, ids) {
   })
   if (!ready.length) return
   const now = await nowIso($)
-  await guarded($, 'mostrar los candidatos del barrido', () => mutate($, list => release(list, ready, now)))
+  await guarded($, 'show the sweep candidates', () => mutate($, list => release(list, ready, now)))
 }
 
 async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, resolvedIds) {
@@ -593,27 +595,27 @@ async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, res
     timeoutMs: 20000,
   })
   if (!r.isAnswered) {
-    await logDebug($, `loose-ends: barrido omitido (${r.reason})`)
+    await logDebug($, `loose-ends: sweep skipped (${r.reason})`)
     return
   }
   const parsed = parseSweepReply(r.text, [...open, ...waiting].map(i => i.id), repos, answer, { allowNew, log })
   if (!parsed) {
-    await logDebug($, 'loose-ends: barrido con JSON inválido')
+    await logDebug($, 'loose-ends: the sweep returned invalid JSON')
     return
   }
-  if (parsed.dropped) await logDebug($, `loose-ends: ${parsed.dropped} ${parsed.dropped === 1 ? 'propuesta descartada' : 'propuestas descartadas'} por cita no literal`)
-  for (const { text, reason } of parsed.skipped) await logDebug($, `loose-ends: candidato del barrido descartado (${reason}): ${text}`)
+  if (parsed.dropped) await logDebug($, `loose-ends: ${parsed.dropped} ${parsed.dropped === 1 ? 'proposal' : 'proposals'} dropped for a quote that is not literal`)
+  for (const { text, reason } of parsed.skipped) await logDebug($, `loose-ends: sweep candidate dropped (${reason}): ${text}`)
   for (const { repo, ...fresh } of parsed.fresh) {
     const target = repo ?? sessionRepo
     if (!target) continue
-    await guarded($, `proponer en ${target}`, async () => {
+    await guarded($, `propose in ${target}`, async () => {
       const out = await offer($, { ...fresh, source: 'sweep', held: true }, target)
-      if (out.error) await logDebug($, `loose-ends: no se pudo proponer en ${target} (${out.error})`)
+      if (out.error) await logDebug($, `loose-ends: could not propose in ${target} (${out.error})`)
     })
   }
   if (parsed.resolved.length && sessionRepo) {
     const now = await nowIso($)
-    await guarded($, 'proponer los cierres', async () => {
+    await guarded($, 'propose the closures', async () => {
       const res = await mutate($, list => {
         // a live item gets a closure for the person to confirm; a candidate nobody accepted yet goes away by itself
         const next = parsed.resolved.reduce((acc, r) => withdraw(proposeClose(acc, r.id, { quote: r.quote, commit }, now), r.id, { quote: r.quote, commit }, now), list)
@@ -627,10 +629,10 @@ async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, res
         // the withdrawn candidate's card says so under its message, and Deshacer brings it back to review; a held one
         // was never shown, so it goes without a word
         if (before.status === 'candidate' && after.status !== 'candidate' && before.held) {
-          await logDebug($, `loose-ends: candidato retenido retirado, resuelto después: ${before.text}`)
+          await logDebug($, `loose-ends: held candidate withdrawn, resolved later: ${before.text}`)
         } else if (before.status === 'candidate' && after.status !== 'candidate' && before.evidence) {
           triage.set(before.id, { kind: 'candidate', quote: before.evidence, state: 'withdrawn', previous: before })
-          await logDebug($, `loose-ends: candidato retirado, resuelto después: ${before.text}`)
+          await logDebug($, `loose-ends: candidate withdrawn, resolved later: ${before.text}`)
         }
       }
     })
@@ -746,7 +748,7 @@ async function undoClosed($) {
 
 // Hacer, from the pane or the band: starts the item in the background and logs a failure.
 function pressNow($, id) {
-  background($, doNow($, id), 'Hacer')
+  background($, doNow($, id), 'start the loose end')
 }
 
 async function doNow($, id) {
@@ -754,7 +756,7 @@ async function doNow($, id) {
   if (!item) return
   if (working) {
     queuedNow = id
-    await $.ui.toast(`Lo empiezo cuando Claude termine: ${item.text}`)
+    await $.ui.toast(t(lang, 'toast.queued', { text: item.text }))
     return
   }
   const now = await nowIso($)
@@ -770,7 +772,7 @@ async function suggestUrgent($) {
   const item = suggestable(items)
   if (!item || working) return
   const r = await $.prompt.suggest({ text: suggestText(lang, item) })
-  if (!r?.isShown) await logDebug($, 'loose-ends: la sugerencia del cabo urgente no se mostró')
+  if (!r?.isShown) await logDebug($, 'loose-ends: the suggestion of the urgent loose end was not shown')
 }
 
 async function addByHand($, text) {
@@ -783,34 +785,40 @@ async function addByHand($, text) {
 // What the card and the pane can do; every write runs in the background and logs its failure.
 function itemActions($) {
   return {
-    save: id => background($, act($, id, save, 'saved'), 'guardar el cabo'),
-    reject: id => background($, act($, id, reject, 'rejected'), 'rechazar el candidato'),
-    confirm: id => background($, closeWith($, id, confirmClose, 'closed'), 'cerrar el cabo'),
-    keep: id => background($, act($, id, keepOpen, 'kept'), 'dejar abierto el cabo'),
-    undo: id => background($, undo($, id), 'deshacer'),
+    save: id => background($, act($, id, save, 'saved'), 'save the loose end'),
+    reject: id => background($, act($, id, reject, 'rejected'), 'reject the candidate'),
+    confirm: id => background($, closeWith($, id, confirmClose, 'closed'), 'close the loose end'),
+    keep: id => background($, act($, id, keepOpen, 'kept'), 'keep the loose end open'),
+    undo: id => background($, undo($, id), 'undo'),
     startEdit: id => {
       editing = editing === id ? null : id
       $.ui.invalidate('ui.render')
     },
     saveEdited: (id, text) => {
       editing = null
-      background($, act($, id, (list, target, now) => editText(list, target, text, now)), 'editar el cabo')
+      background($, act($, id, (list, target, now) => editText(list, target, text, now)), 'edit the loose end')
     },
     doNow: id => pressNow($, id),
-    done: id => background($, closeWith($, id, markDone, null), 'cerrar el cabo'),
-    dismiss: id => background($, act($, id, dismiss), 'descartar el cabo'),
+    done: id => background($, closeWith($, id, markDone, null), 'close the loose end'),
+    dismiss: id => background($, act($, id, dismiss), 'dismiss the loose end'),
     // ↺ reopens a closed item, or brings a withdrawn candidate back to review
-    reopen: id => background($, act($, id, (list, target, now) => unwithdraw(reopen(list, target, now), target, now)), 'reabrir el cabo'),
+    reopen: id => background($, act($, id, (list, target, now) => unwithdraw(reopen(list, target, now), target, now)), 'reopen the loose end'),
     cyclePriority: id =>
-      background($, act($, id, (list, target, now) => setPriority(list, target, NEXT_PRIORITY[list.find(i => i.id === target)?.priority] ?? 'medium', now)), 'cambiar la prioridad'),
-    keepFresh: id => background($, act($, id, touch), 'mantener el cabo'),
-    add: text => background($, addByHand($, text), 'apuntar un cabo'),
-    push: () => background($, pushRemote($, sessionRepo), 'subir los cabos'),
+      background($, act($, id, (list, target, now) => setPriority(list, target, NEXT_PRIORITY[list.find(i => i.id === target)?.priority] ?? 'medium', now)), 'change the priority'),
+    keepFresh: id => background($, act($, id, touch), 'keep the loose end fresh'),
+    add: text => background($, addByHand($, text), 'note a loose end'),
+    push: () => background($, pushRemote($, sessionRepo), 'push the loose ends'),
     dismissNotice: () => {
       notice = null
       $.ui.invalidate('ui.render')
     },
   }
+}
+
+// Opens the Cuaderno pane with its title in the mod's language.
+async function openNotebook($) {
+  await resolveLanguage($)
+  await $.ui.open({ id: 'loose-ends', title: t(lang, 'pane.title') })
 }
 
 export function register(on, options = {}) {
@@ -832,20 +840,20 @@ export function register(on, options = {}) {
     notedThisTurn = false
     lastActivity = await $.clock.now()
     await $.tool.register({ name: TOOL_NAME, description: toolDescription(lang), inputSchema: toolSchema(lang) })
-    await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: cabos por revisar, abiertos y cerrados', immediate: true })
+    await $.command.register({ name: t(lang, 'command.name'), description: t(lang, 'command.description'), immediate: true })
     touched = new Set()
     sessionRepo = null
-    await guarded($, 'resolver el repo de la sesión', () => refreshSessionRepo($))
+    await guarded($, 'resolve the session repo', () => refreshSessionRepo($))
     branch = null
-    await guarded($, 'leer la rama', async () => {
+    await guarded($, 'read the branch', async () => {
       branch = await readBranch($)
     })
-    await guarded($, 'leer los cabos', () => load($))
+    await guarded($, 'read the loose ends', () => load($))
     // what an earlier session's sweep held back has had its turn: it goes to the person now
     await releaseHeld($, heldCandidates(items).map(i => i.id))
     notice = null
     sync = null
-    if (sessionRepo) background($, startSync($, sessionRepo), 'traer los cabos de origin')
+    if (sessionRepo) background($, startSync($, sessionRepo), 'fetch the loose ends from origin')
     if (refreshTimer) refreshTimer.cancel()
     refreshTimer = $.clock.every(60000, () => $.ui.invalidate('ui.render'))
     return next(e)
@@ -864,7 +872,7 @@ export function register(on, options = {}) {
         $.ui.invalidate('ui.render')
         $.clock.after(FLASH_MS + 50, () => $.ui.invalidate('ui.render'))
       }
-      if (isPush(e.command, failed)) background($, afterUserPush($), 'subir los cabos tras tu push')
+      if (isPush(e.command, failed)) background($, afterUserPush($), 'push the loose ends after your push')
     }
     const passing = passingFor(e)
     if (passing && r && !r.deny && !r.isError) {
@@ -888,7 +896,7 @@ export function register(on, options = {}) {
       if (typeof e.text === 'string' && e.text.startsWith(prefix)) {
         const wanted = e.text.slice(prefix.length).trim()
         const item = live(items).find(i => i.text === wanted)
-        if (item) background($, act($, item.id, start), 'empezar el cabo sugerido')
+        if (item) background($, act($, item.id, start), 'start the suggested loose end')
       }
     }
     for (const [dir, top] of repoCache) if (top === null) repoCache.delete(dir)
@@ -908,29 +916,29 @@ export function register(on, options = {}) {
     firstTurnDone = true
     lastActivity = await $.clock.now()
     $.ui.invalidate('ui.render')
-    await guarded($, 'resolver el repo de la sesión tras el turno', () => refreshSessionRepo($))
-    await guarded($, 'leer la rama tras el turno', async () => {
+    await guarded($, 'resolve the session repo after the turn', () => refreshSessionRepo($))
+    await guarded($, 'read the branch after the turn', async () => {
       branch = await readBranch($)
     })
     const now = await nowIso($)
-    await guarded($, 'refrescar los cabos tras el turno', () => mutate($, list => expireCandidates(list, now)))
-    if (sessionRepo) await guarded($, 'apuntar lo visto del repo', () => recordSeen($, sessionRepo, { compare: false }))
+    await guarded($, 'refresh the loose ends after the turn', () => mutate($, list => expireCandidates(list, now)))
+    if (sessionRepo) await guarded($, 'record what this session sees of the repo', () => recordSeen($, sessionRepo, { compare: false }))
     if (queuedNow) {
       const id = queuedNow
       queuedNow = null
       $.clock.after(500, () => pressNow($, id))
-    } else if (suggestable(items)) $.clock.after(500, () => background($, suggestUrgent($), 'sugerir el cabo urgente'))
+    } else if (suggestable(items)) $.clock.after(500, () => background($, suggestUrgent($), 'suggest the urgent loose end'))
     if (e.reason === 'answer' && typeof e.answer === 'string' && e.answer.trim()) {
       const allowNew = shouldSweep(e.answer) && !notedThisTurn
       if (allowNew || live(items).some(i => i.status === 'doing') || items.some(i => i.status === 'candidate')) {
         const set = touched
         let commit = null
         let log = ''
-        await guarded($, 'leer el commit del turno', async () => {
+        await guarded($, 'read the commit of the turn', async () => {
           commit = await commitSince($, turnStartedAt)
           if (commit) log = await logSince($, turnStartedAt)
         })
-        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit, { allowNew, log }), 'el barrido')
+        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit, { allowNew, log }), 'the sweep')
       }
     }
     return r
@@ -977,9 +985,14 @@ export function register(on, options = {}) {
     return text ? { ...r, blocks: [...r.blocks, { name: 'looseEnds', text }] } : r
   })
 
+  // the command is /pendientes in Spanish and /loose-ends in English; only the one of the language is registered
   on('command.run', { command: 'pendientes' }, async ($) => {
-    await resolveLanguage($)
-    await $.ui.open({ id: 'loose-ends', title: 'Cuaderno' })
+    await openNotebook($)
+    return {}
+  })
+
+  on('command.run', { command: 'loose-ends' }, async ($) => {
+    await openNotebook($)
     return {}
   })
 
@@ -990,10 +1003,10 @@ export function register(on, options = {}) {
     const now = await $.clock.now()
     return renderBand(el, e.surface, bandModel(now), {
       openPane: () => {
-        background($, $.ui.open({ id: 'loose-ends', title: 'Cuaderno' }), 'abrir el cuaderno')
+        background($, openNotebook($), 'open the notebook')
       },
       undoClose: () => {
-        background($, undoClosed($), 'deshacer el cierre')
+        background($, undoClosed($), 'undo the close')
       },
       doNow: id => pressNow($, id),
     })

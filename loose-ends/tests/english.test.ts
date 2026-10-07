@@ -172,3 +172,67 @@ test('English: the filter says why in English, and catches English and Spanish o
   expect(again.result).toBe('Not proposed: already noted.')
   expect(w.saved()).toHaveLength(1)
 })
+
+test('English: the command is /loose-ends, described in English, and opens the Notebook', EN, async ($, on) => {
+  const w = world(on)
+  let opened = ''
+  let title = ''
+  on('ui.open', ($: any, e: any) => { opened = e.id; title = e.title; return { value: { isPlaced: true } } })
+  await w.start($)
+  expect(w.commands.map((c: any) => c.name)).toEqual(['loose-ends'])
+  expect(w.commands[0]).toMatchObject({ description: 'Opens the notebook: loose ends to review, open and closed', immediate: true })
+  await $.command.run({ command: 'loose-ends', args: '' })
+  expect([opened, title]).toEqual(['loose-ends', 'Notebook'])
+})
+
+test('English: Do it during a turn says it waits in English', EN, async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Fix the login', { priority: 'high' })) } })
+  drawEngine(on)
+  turns(on)
+  on('prompt.submit', ($: any, e: any) => ({ text: e.text }))
+  await w.start($)
+  await $.turn.start({ text: 'hello', turnId: 't' })
+  const desk = await band($)
+  await desk.press({ key: 'band-act' })
+  await w.clock.settle()
+  expect(w.toasts).toEqual(["I'll start it when Claude finishes: Fix the login"])
+  await desk.unmount()
+})
+
+test('English: after your push it asks in English, and Always pushes and remembers', EN, async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Local one')) }, remote: { [ROOT]: '' } })
+  const asked: any[] = []
+  on('tool.call', ($: any, e: any) => {
+    if (e.tool === 'AskUserQuestion') {
+      asked.push(e.questions[0])
+      return { result: { questions: e.questions, answers: { [e.questions[0].question]: 'Always' } } }
+    }
+    return { result: { stdout: '', stderr: '', interrupted: false }, text: '' }
+  })
+  await w.start($)
+  await w.clock.settle()
+  await $.tool.call({ tool: 'Bash', command: 'git push origin main' })
+  await w.clock.settle()
+  expect(asked[0].question).toBe("Push this repo's loose ends to origin too? They travel in refs/loose-ends, outside your branches.")
+  expect(asked[0].header).toBe('Loose ends')
+  expect(asked[0].options.map((o: any) => o.label ?? o)).toEqual(['Always', 'This time', 'Never'])
+  expect(w.pushes).toEqual([ROOT])
+  expect(w.config[ROOT]).toBe('true')
+})
+
+test('English: the import notice of the 0.3 file', EN, async ($, on) => {
+  const w = world(on, { '/proj/.claude/loose-ends.json': JSON.stringify({ version: 1, items: [it('q1', 'Docs for jsonld'), it('q2', 'Second one')] }) })
+  drawEngine(on)
+  await w.start($)
+  await w.clock.settle()
+  const ui = await pane($)
+  expect(await ui.find({ type: 'Text', text: 'Imported 2 loose ends from .claude/loose-ends.json. You can now delete the file from the repo.' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('English: debug lines are English, with the reason in English', EN, async ($, on) => {
+  const w = world(on)
+  await w.start($)
+  await $.tool.call({ tool: TOOL, text: 'Wait for CI to finish', category: 'warning', priority: 'low' })
+  expect(w.logs).toContain('loose-ends: candidate rejected (not work on the code (checking, waiting, deciding, notifying, pushing or deploying)): Wait for CI to finish')
+})

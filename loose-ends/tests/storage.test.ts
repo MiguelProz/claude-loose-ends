@@ -45,7 +45,7 @@ test('when git cannot write the object, the note answers why instead of throwing
   await w.start($)
   w.flags.failWrites = true
   const r = await $.tool.call({ tool: TOOL, category: 'deuda', text: 'Cabo que git no escribe', priority: 'low' })
-  expect(r.result).toBe('No se pudo proponer: los cabos de /proj (refs/loose-ends) no se pueden leer (git hash-object falló).')
+  expect(r.result).toBe('No se pudo proponer: los cabos de /proj (refs/loose-ends) no se pueden leer (git hash-object failed).')
   expect(w.writes).toEqual([])
 })
 

@@ -141,15 +141,15 @@ export function sweepPriority(priority, sentence) {
   return priority === 'low' ? 'low' : 'medium'
 }
 
-// Why the sentence holding a quote says it is not a loose end, or null.
+// Why the sentence holding a quote says it is not a loose end, or null. Only the debug log shows it, in English.
 export function sentenceVerdict(sentence) {
   if (typeof sentence !== 'string') return null
   const text = plain(sentence)
   for (const m of text.matchAll(new RegExp(DONE.source, 'g'))) {
-    if (!NEGATED.test(text.slice(Math.max(0, m.index - 20), m.index))) return 'la frase dice que ya está hecho'
+    if (!NEGATED.test(text.slice(Math.max(0, m.index - 20), m.index))) return 'the sentence says it is already done'
   }
-  if (UNDER_WAY.test(text)) return 'la frase dice que se está haciendo'
-  if (DECISION.test(text)) return 'la frase deja una decisión al usuario'
+  if (UNDER_WAY.test(text)) return 'the sentence says it is being done'
+  if (DECISION.test(text)) return 'the sentence leaves a decision to the user'
   return null
 }
 

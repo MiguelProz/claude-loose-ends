@@ -137,7 +137,7 @@ test('an unreadable local blob is never pushed over origin', async ($, on) => {
   await w.clock.settle()
   expect(w.pushes).toEqual([])
   expect(w.remoteText(ROOT)).toBe(good)
-  expect(w.logs.some(l => l.includes('no se suben los cabos'))).toBe(true)
+  expect(w.logs.some(l => l.includes('not pushing the loose ends'))).toBe(true)
   const ui = await pane($)
   await ui.press({ key: 'push-now' })
   await w.clock.settle()
@@ -160,14 +160,14 @@ test('a merge that loses three races to other sessions pushes nothing', async ($
   await w.clock.settle()
   expect(w.pushes).toEqual([])
   expect(w.remoteText(ROOT)).toBe(theirs)
-  expect(w.logs.some(l => l.includes('no se suben los cabos'))).toBe(true)
+  expect(w.logs.some(l => l.includes('not pushing the loose ends'))).toBe(true)
 })
 
 test('a failed fetch at start leaves a line in the debug log', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(item('a1', 'Local')) }, remote: { [ROOT]: '' } })
   await w.start($)
   await w.clock.settle()
-  expect(w.logs).toContain('loose-ends: no se pudieron traer los cabos de origin')
+  expect(w.logs).toContain('loose-ends: could not fetch the loose ends from origin')
 })
 
 test('a failing import does not stop origin from being fetched, and says so in the log', async ($, on) => {
@@ -176,7 +176,7 @@ test('a failing import does not stop origin from being fetched, and says so in t
   await w.start($)
   await w.clock.settle()
   expect(w.fetches).toEqual([ROOT])
-  expect(w.logs.some(l => l.includes('importar .claude/loose-ends.json falló'))).toBe(true)
+  expect(w.logs.some(l => l.includes('import .claude/loose-ends.json failed'))).toBe(true)
 })
 
 test('without origin nothing is fetched', async ($, on) => {
@@ -271,7 +271,7 @@ test('if origin moved after the fetch, the push is refused and nothing is overwr
   await w.clock.settle()
   expect(w.pushes).toEqual([])
   expect(w.remoteText(ROOT)).toContain('Empujado por otro')
-  expect(w.logs.some(l => l.includes('no se pudieron subir'))).toBe(true)
+  expect(w.logs.some(l => l.includes('could not push'))).toBe(true)
 })
 
 test('a fetch or push that times out says the loose ends could not be uploaded', async ($, on) => {
@@ -288,7 +288,7 @@ test('a fetch or push that times out says the loose ends could not be uploaded',
   expect(await ui.find({ type: 'Text', text: 'No se pudieron subir a origin' })).toBeDefined()
   expect(w.pushes).toEqual([])
   // the test host turns a throwing stub into its own error, so only the start of the line is checked
-  expect(w.logs.some(l => l.startsWith('loose-ends: no se pudieron subir los cabos a origin ('))).toBe(true)
+  expect(w.logs.some(l => l.startsWith('loose-ends: could not push the loose ends to origin ('))).toBe(true)
   await ui.unmount()
 })
 
@@ -298,7 +298,7 @@ test('a fetch that times out at start is logged and the start still says where t
   w.flags.timeoutNet = true
   await w.start($)
   await w.clock.settle()
-  expect(w.logs.some(l => l.startsWith('loose-ends: no se pudieron traer los cabos de origin ('))).toBe(true)
+  expect(w.logs.some(l => l.startsWith('loose-ends: could not fetch the loose ends from origin ('))).toBe(true)
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: 'Cambios sin subir' })).toBeDefined()
   await ui.unmount()

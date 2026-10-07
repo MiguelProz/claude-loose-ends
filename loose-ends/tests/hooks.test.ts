@@ -46,7 +46,7 @@ test('the filter refuses what is not a loose end and says why', async ($, on) =>
   const short = await $.tool.call({ tool: TOOL, text: ' a ', category: 'bug', priority: 'low' })
   expect(String(short.result)).toContain('demasiado corto')
   expect(w.saved()).toHaveLength(1)
-  expect(w.logs.some(l => l.includes('candidato rechazado'))).toBe(true)
+  expect(w.logs.some(l => l.includes('candidate rejected (ya está apuntado): corregir el PARSER'))).toBe(true)
 })
 
 test('concurrent proposals are both saved, each with the branch of its moment', async ($, on) => {
@@ -258,7 +258,7 @@ test('only an answered turn is swept; a broken reply changes nothing', async ($,
   await w.clock.settle()
   expect(calls).toBe(1)
   expect(w.saved()).toEqual([])
-  expect(w.logs).toContain('loose-ends: barrido con JSON inválido')
+  expect(w.logs).toContain('loose-ends: the sweep returned invalid JSON')
 })
 
 test('the sweep logs why it could not file a candidate', async ($, on) => {
@@ -271,7 +271,7 @@ test('the sweep logs why it could not file a candidate', async ($, on) => {
   await w.start($)
   await endTurn($)
   await w.clock.settle()
-  expect(w.logs).toContain('loose-ends: no se pudo proponer en /proj (json)')
+  expect(w.logs).toContain('loose-ends: could not propose in /proj (json)')
 })
 
 test('the sweep never touches an item the person closed meanwhile', async ($, on) => {
@@ -608,7 +608,7 @@ test('a failing write from a pane button is logged, not thrown', async ($, on) =
   w.flags.failWrites = true
   await ui.press({ key: 'done-a1' })
   await w.clock.settle()
-  expect(w.logs).toEqual([expect.stringContaining('falló')])
+  expect(w.logs).toEqual([expect.stringContaining('failed')])
   await ui.unmount()
 })
 
@@ -745,7 +745,7 @@ test('a git failure after the turn does not reject the hook', async ($, on) => {
   w.flags.failGit = true
   const r = await endTurn($, 'corto')
   expect(r.text).toBe('corto')
-  expect(w.logs.some(l => l.includes('leer la rama tras el turno falló'))).toBe(true)
+  expect(w.logs.some(l => l.includes('read the branch after the turn failed'))).toBe(true)
 })
 
 test('starting a session twice does not stack the refresh timer', async ($, on) => {

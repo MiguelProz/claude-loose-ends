@@ -81,7 +81,7 @@ test('a suggestion the box did not show leaves a line in the debug log', async (
   await w.start($)
   await endTurn($)
   await w.clock.advance(500)
-  expect(w.logs.some(l => l.includes('sugerencia') && l.includes('no se mostró'))).toBe(true)
+  expect(w.logs.some(l => l.includes('suggestion') && l.includes('not shown'))).toBe(true)
 })
 
 test('a prompt that takes the suggestion starts the item', async ($, on) => {

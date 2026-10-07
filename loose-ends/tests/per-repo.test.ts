@@ -118,7 +118,7 @@ test('a candidate the sweep cannot file in one repo does not stop the rest of th
   await w.clock.settle()
   expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Tipar el parser de fechas', 'candidate']])
   expect(w.saved()[0].proposal.quote).toBe('y el test lo omito por ahora')
-  expect(w.logs.some(l => l.includes('/other') && l.includes('falló'))).toBe(true)
+  expect(w.logs.some(l => l.includes('/other') && l.includes('failed'))).toBe(true)
 })
 
 test('the sweep falls back to the session repo when the path is not a candidate', async ($, on) => {

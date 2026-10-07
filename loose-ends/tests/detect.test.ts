@@ -151,16 +151,16 @@ describe('the whole sentence', () => {
     expect(sentenceAround(ANSWER_S, 'nada de esto se dijo')).toBe(null)
   })
   test('done, under way or left to the person is not a loose end; a negated done is', () => {
-    expect(verdict('El bug del panel sigue roto en Safari')).toBe('la frase dice que ya está hecho')
-    expect(verdict('dos agentes que arreglan el test de fechas')).toBe('la frase dice que se está haciendo')
-    expect(verdict('Decidir si usamos zod')).toBe('la frase deja una decisión al usuario')
+    expect(verdict('El bug del panel sigue roto en Safari')).toBe('the sentence says it is already done')
+    expect(verdict('dos agentes que arreglan el test de fechas')).toBe('the sentence says it is being done')
+    expect(verdict('Decidir si usamos zod')).toBe('the sentence leaves a decision to the user')
     expect(verdict('El login todavía no está resuelto')).toBe(null)
     expect(verdict('Queda pendiente tipar team-drafts')).toBe(null)
   })
   test('every kind of marker, with or without accents', () => {
-    const done = 'la frase dice que ya está hecho'
-    const underWay = 'la frase dice que se está haciendo'
-    const decision = 'la frase deja una decisión al usuario'
+    const done = 'the sentence says it is already done'
+    const underWay = 'the sentence says it is being done'
+    const decision = 'the sentence leaves a decision to the user'
     expect(sentenceVerdict('el caché de fechas ya está arreglado')).toBe(done)
     expect(sentenceVerdict('los dos tests rotos quedan arreglados')).toBe(done)
     expect(sentenceVerdict('el aviso de tipos ya esta')).toBe(done)
@@ -187,8 +187,8 @@ describe('the whole sentence', () => {
     const parsed = parseSweepReply(reply, [], [], ANSWER_S)
     expect(parsed?.fresh.map(f => f.text)).toEqual(['Tipar team-drafts'])
     expect(parsed?.skipped).toEqual([
-      { text: 'Arreglar el panel en Safari', reason: 'la frase dice que ya está hecho' },
-      { text: 'Invalidar el caché', reason: 'la frase dice que se está haciendo' },
+      { text: 'Arreglar el panel en Safari', reason: 'the sentence says it is already done' },
+      { text: 'Invalidar el caché', reason: 'the sentence says it is being done' },
     ])
   })
 })
