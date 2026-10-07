@@ -299,8 +299,9 @@
       "evidence": "Cuando el panel te pregunte «¿Resuelto?» por el cabo 8ae8c5aa, confírmalo.",
       "branch": "master",
       "createdAt": "2026-10-07T18:35:35.594Z",
-      "updatedAt": "2026-10-07T18:36:03.550Z",
-      "status": "open"
+      "updatedAt": "2026-10-07T18:37:00.568Z",
+      "status": "done",
+      "closedAt": "2026-10-07T18:37:00.568Z"
     }
   ]
 }
