@@ -264,8 +264,9 @@
       "file": "loose-ends/lib/filter.mjs",
       "branch": "master",
       "createdAt": "2026-10-07T18:28:26.494Z",
-      "updatedAt": "2026-10-07T18:28:26.494Z",
-      "status": "candidate"
+      "updatedAt": "2026-10-07T18:32:30.248Z",
+      "status": "rejected",
+      "closedAt": "2026-10-07T18:32:30.248Z"
     }
   ]
 }
