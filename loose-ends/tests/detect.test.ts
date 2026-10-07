@@ -164,6 +164,7 @@ describe('the whole sentence', () => {
     expect(sentenceVerdict('el caché de fechas ya está arreglado')).toBe(done)
     expect(sentenceVerdict('los dos tests rotos quedan arreglados')).toBe(done)
     expect(sentenceVerdict('el aviso de tipos ya esta')).toBe(done)
+    expect(sentenceVerdict('el horario ya está editado en data.ts, sin tests pasados y sin el texto del panel.')).toBe(null)
     expect(sentenceVerdict('el login aun no esta solucionado')).toBe(null)
     expect(sentenceVerdict('el panel sin corregido no se entiende')).toBe(null)
     expect(sentenceVerdict('el parser va en la tanda 2')).toBe(underWay)

@@ -30,12 +30,16 @@ if (!parsed.ok) {
   process.exit(1)
 }
 
-// Claude Code keeps a session's transcript under ~/.claude/projects/<path with / as ->/.
-const dir = process.argv[3] ?? join(homedir(), '.claude', 'projects', top.replace(/[/.]/g, '-'))
+// Claude Code keeps a session's transcript under ~/.claude/projects/<path with / as ->/; the repo's worktrees
+// (<repo>/.claude/worktrees/…) get folders that start with the same name, and their sessions count too.
+const projects = join(homedir(), '.claude', 'projects')
+const base = top.replace(/[/.]/g, '-')
+const dirs = process.argv[3] ? [process.argv[3]] : existsSync(projects) ? readdirSync(projects).filter(n => n === base || n.startsWith(`${base}--`)).map(n => join(projects, n)) : []
+const dir = dirs.length === 1 ? dirs[0] : `${dirs.length} carpetas de ${projects}`
 const answers = []
-if (existsSync(dir)) {
-  for (const name of readdirSync(dir).filter(n => n.endsWith('.jsonl'))) {
-    for (const line of readFileSync(join(dir, name), 'utf8').split('\n')) {
+for (const folder of dirs.filter(d => existsSync(d))) {
+  for (const name of readdirSync(folder).filter(n => n.endsWith('.jsonl'))) {
+    for (const line of readFileSync(join(folder, name), 'utf8').split('\n')) {
       if (!line.includes('"assistant"')) continue
       try {
         const entry = JSON.parse(line)

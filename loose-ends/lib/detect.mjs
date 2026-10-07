@@ -122,8 +122,9 @@ export function sentenceAround(answer, quote) {
 
 // Words without accents, so the markers below match «está» and «esta» alike.
 const plain = text => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-// Done in the same sentence («… Corregido.»), unless a negation sits right before it («todavía no está resuelto»).
-const DONE = /\b(corregid[oa]s?|arreglad[oa]s?|resuelt[oa]s?|solucionad[oa]s?|ya esta (hecho|arreglado|corregido|resuelto|listo)|ya esta\b)/
+// Done in the same sentence («… Corregido.»), unless a negation sits right before it («todavía no está resuelto»). A bare
+// «ya está» counts only where the sentence ends: «ya está editado, sin tests» is half done.
+const DONE = /\b(corregid[oa]s?|arreglad[oa]s?|resuelt[oa]s?|solucionad[oa]s?|ya esta (hecho|arreglado|corregido|resuelto|listo)|ya esta(?=[.!;]|$))/
 const NEGATED = /\b(no|sin|nunca|todavia no|aun no)\s+(esta\s+|estan\s+|queda\s+|quedan\s+)?$/
 // Work under way or planned in this session: agents running, the next batch, «lo arreglo», «cuando terminen».
 const UNDER_WAY = /\b(he lanzado|lanzo (un|dos|tres|los|el|varios)|estoy lanzando|lo estan arreglando|va en la tanda|van en la tanda|en la (siguiente|proxima) tanda|(lo|la|los|las) (arreglo|corrijo|cambio|extraigo|hago) (ahora|con|en|al|despues)|se extraera|lo revisare|cuando terminen|cuando acaben|cuando termine el agente|en el siguiente paso|a continuacion (lo|la|los|las))/
