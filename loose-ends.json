@@ -343,8 +343,9 @@
       "evidence": "la línea con la URL se sale por la derecha",
       "branch": "master",
       "createdAt": "2026-10-07T21:43:52.322Z",
-      "updatedAt": "2026-10-07T21:45:52.064Z",
-      "status": "candidate"
+      "updatedAt": "2026-10-07T21:53:34.031Z",
+      "status": "rejected",
+      "closedAt": "2026-10-07T21:53:34.031Z"
     },
     {
       "id": "b993e9eb",
