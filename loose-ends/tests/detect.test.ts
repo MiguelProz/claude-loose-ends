@@ -157,6 +157,23 @@ describe('the whole sentence', () => {
     expect(verdict('El login todavía no está resuelto')).toBe(null)
     expect(verdict('Queda pendiente tipar team-drafts')).toBe(null)
   })
+  test('every kind of marker, with or without accents', () => {
+    const done = 'la frase dice que ya está hecho'
+    const underWay = 'la frase dice que se está haciendo'
+    const decision = 'la frase deja una decisión al usuario'
+    expect(sentenceVerdict('el caché de fechas ya está arreglado')).toBe(done)
+    expect(sentenceVerdict('los dos tests rotos quedan arreglados')).toBe(done)
+    expect(sentenceVerdict('el aviso de tipos ya esta')).toBe(done)
+    expect(sentenceVerdict('el login aun no esta solucionado')).toBe(null)
+    expect(sentenceVerdict('el panel sin corregido no se entiende')).toBe(null)
+    expect(sentenceVerdict('el parser va en la tanda 2')).toBe(underWay)
+    expect(sentenceVerdict('cuando terminen, suite y commit')).toBe(underWay)
+    expect(sentenceVerdict('el helper se extraerá al final')).toBe(underWay)
+    expect(sentenceVerdict('lo revisaré al cerrar la tanda')).toBe(underWay)
+    expect(sentenceVerdict('si usar zod es decisión tuya')).toBe(decision)
+    expect(sentenceVerdict('lo de la caché te lo pregunto luego')).toBe(decision)
+    expect(sentenceVerdict(null as any)).toBe(null)
+  })
   test('the sweep drops those candidates and says why', () => {
     const reply = JSON.stringify({
       new: [
