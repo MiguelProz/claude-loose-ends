@@ -2,5 +2,14 @@
   "name": "loose-ends",
   "version": "0.4.8",
   "description": "Propone los cabos sueltos que Claude deja sin hacer y tú decides cuáles se guardan, los guarda en refs/loose-ends sin ensuciar git, y Chispa avisa de lo que pide tu atención.",
-  "author": { "name": "Miguel Ángel Pérez García" }
+  "author": { "name": "Miguel Ángel Pérez García" },
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the band, the Notebook and the texts sent to Claude. auto follows LC_ALL, LC_MESSAGES or LANG: Spanish when the first one set starts with es, English otherwise.",
+      "default": "auto",
+      "options": ["auto", "es", "en"]
+    }
+  }
 }
