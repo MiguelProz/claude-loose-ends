@@ -156,10 +156,11 @@ describe('band', () => {
     expect(bandCard(band({ counts: counts({ candidates: 1, live: 1, medium: 1 }), justClosed: { text: 'Hecho' }, recap, next: next() }))?.border).toBe('claude')
     expect(bandCard(band({ counts: counts({ live: 1, medium: 1 }), justClosed: { text: 'Hecho' }, recap, next: next() }))?.border).toBe('success')
   })
-  test('desktop: with nothing to say the band is only Chispa, without a card', () => {
+  test('desktop: with nothing to say the band is a card with Chispa and her phrase, no button and no link', () => {
     const root = renderBand(fake, 'desktop', band(), acts)
-    expect(root.props.children).toHaveLength(1)
-    expect(root.props.borderStyle).toBeUndefined()
+    expect(root.props).toMatchObject({ borderStyle: 'round', borderColor: 'promptBorder' })
+    expect(byKey(root, 'band-act')).toBeUndefined()
+    expect(byKey(root, 'band-line')).toBeUndefined()
   })
   test('terminal: a dim face, the dim line and a plain button', () => {
     const root = renderBand(fake, 'terminal', band({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent: item({ text: 'Arreglar el login' }) }), acts)

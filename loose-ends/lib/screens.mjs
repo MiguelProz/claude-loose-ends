@@ -91,6 +91,25 @@ function cardBottom(el, bottom) {
   return el.Box({ key: 'band-bottom', flexDirection: 'row', gap: 1, overflow: 'hidden', children: parts })
 }
 
+// What Chispa says when the band has nothing to show: the first that applies of Claude working, Chispa asleep, what
+// was closed this week and the time of day. The variant goes by the day's number, so it changes once a day.
+export function idlePhrase(m) {
+  const lang = m.lang
+  const variant = Math.abs(m.day ?? 0) % 2
+  if (m.working) return t(lang, `idle.working.${variant}`)
+  if (m.mood === 'sleeping') return t(lang, `idle.sleeping.${variant}`)
+  if (m.closedWeek > 0) return tn(lang, `idle.week.${variant}`, m.closedWeek)
+  const hour = m.hour ?? 12
+  const part = hour >= 6 && hour < 14 ? 'morning' : hour >= 14 && hour < 21 ? 'afternoon' : 'night'
+  return t(lang, `idle.${part}.${variant}`)
+}
+
+// The local hour and the number of the local calendar day, for idlePhrase.
+export function localClock(now) {
+  const d = new Date(now)
+  return { hour: d.getHours(), day: Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / (24 * 60 * 60 * 1000)) }
+}
+
 export function renderBand(el, surface, m, actions) {
   if (surface === 'terminal') {
     const line = bandLine(m)
@@ -99,12 +118,19 @@ export function renderBand(el, surface, m, actions) {
     if (line) {
       children.push(el.Text({ dimColor: true, ...(line.warning ? { color: 'warning' } : {}), children: line.text }))
       children.push(el.Button({ key: line.action === 'undo' ? 'undo-close' : 'open-pane', label: line.label, plain: true, dimColor: true, onPress: press }))
+    } else {
+      children.push(el.Text({ dimColor: true, children: idlePhrase(m) }))
     }
     return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children })
   }
   const chispa = el.Svg({ source: chispaSvg(m.mood), alt: moodLabel(m.lang, m.mood), width: 44, height: 37 })
   const card = bandCard(m)
-  if (!card) return el.Box({ flexDirection: 'row', alignItems: 'center', gap: 1, children: [chispa] })
+  const frame = { flexDirection: 'row', alignItems: 'center', gap: 1, borderStyle: 'round', backgroundColor: 'userMessageBackground', paddingX: 1 }
+  if (!card) {
+    // nothing waits: the same card, with Chispa's phrase in gray and nothing to press
+    const phrase = el.Box({ flexGrow: 1, flexShrink: 1, minWidth: 0, children: [el.Text({ dimColor: true, wrap: 'truncate-end', children: idlePhrase(m) })] })
+    return el.Box({ ...frame, borderColor: 'promptBorder', children: [chispa, phrase] })
+  }
   const run = target => (target.action === 'doNow' ? actions.doNow(target.id) : target.action === 'undo' ? actions.undoClose() : actions.openPane())
   const side = []
   if (card.button) {
@@ -116,13 +142,8 @@ export function renderBand(el, surface, m, actions) {
   }
   // a live card: the border says the state, the fill sets it apart from the transcript
   return el.Box({
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 1,
-    borderStyle: 'round',
+    ...frame,
     borderColor: card.border,
-    backgroundColor: 'userMessageBackground',
-    paddingX: 1,
     children: [
       chispa,
       el.Box({ flexDirection: 'column', flexGrow: 1, flexShrink: 1, minWidth: 0, children: [cardTop(el, card.top), cardBottom(el, card.bottom)] }),

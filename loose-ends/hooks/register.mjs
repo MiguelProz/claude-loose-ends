@@ -15,7 +15,7 @@ import {
 } from '../lib/texts.mjs'
 import { FLASH_MS, bashFailed, chispaMood, isCommit, isPush } from '../lib/mood.mjs'
 import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, relativeTo, repoName } from '../lib/repos.mjs'
-import { emphasize, renderBand, renderPane, renderTriage, sinceText } from '../lib/screens.mjs'
+import { emphasize, localClock, renderBand, renderPane, renderTriage, sinceText } from '../lib/screens.mjs'
 import { pickLanguage, t, tn } from '../lib/i18n.mjs'
 
 const MAX_WALK = 3
@@ -652,6 +652,8 @@ function bandModel(now) {
     next: nextItem(items),
     sync,
     working,
+    closedWeek: closedRecently(items, now).length,
+    ...localClock(now),
   }
 }
 
