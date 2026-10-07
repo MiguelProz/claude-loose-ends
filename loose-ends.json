@@ -227,6 +227,18 @@
       "createdAt": "2026-10-07T18:22:09.166Z",
       "updatedAt": "2026-10-07T18:22:09.166Z",
       "status": "candidate"
+    },
+    {
+      "id": "f986928e",
+      "text": "Añadir tests en `detect.test.ts` para validar el filtro determinista que rechaza frases con «corregido», «arreglado», «he lanzado», «decide», etc.",
+      "category": "test",
+      "priority": "high",
+      "source": "sweep",
+      "evidence": "Todo esto con tests en detect.test.ts.",
+      "branch": "master",
+      "createdAt": "2026-10-07T18:22:09.258Z",
+      "updatedAt": "2026-10-07T18:22:09.258Z",
+      "status": "candidate"
     }
   ]
 }
