@@ -252,6 +252,19 @@
       "createdAt": "2026-10-07T18:28:24.801Z",
       "updatedAt": "2026-10-07T18:28:24.801Z",
       "status": "candidate"
+    },
+    {
+      "id": "57df2d80",
+      "text": "Limitar la prioridad del barrido a medium (lo aplazado, low) y deduplicar sus candidatos por similitud con toda la cola; sin candidatos nuevos si el turno ya usó note_loose_end",
+      "category": "mejora",
+      "priority": "medium",
+      "source": "tool",
+      "evidence": "Pendiente: tope de prioridad y deduplicación por similitud en el barrido",
+      "file": "loose-ends/lib/filter.mjs",
+      "branch": "master",
+      "createdAt": "2026-10-07T18:28:26.494Z",
+      "updatedAt": "2026-10-07T18:28:26.494Z",
+      "status": "candidate"
     }
   ]
 }
