@@ -6,7 +6,7 @@ const flat = (node: any): any[] => [node, ...([] as any[]).concat(node?.props?.c
 const byKey = (node: any, key: string) => flat(node).find(n => n?.props?.key === key)
 const texts = (node: any) => flat(node).filter(n => n?.type === 'Text').map(n => String(n.props.children))
 const counts = (over = {}) => ({ candidates: 0, live: 0, high: 0, medium: 0, low: 0, ...over })
-const band = (over = {}) => ({ mood: 'idle', counts: counts(), urgent: null, next: null, justClosed: null, recap: null, fileError: null, sync: null, working: false, ...over })
+const band = (over = {}) => ({ lang: 'es', mood: 'idle', counts: counts(), urgent: null, next: null, justClosed: null, recap: null, fileError: null, sync: null, working: false, ...over })
 const item = (over = {}) => ({ id: 'c1', text: 'Corregir los revalidatePath del grupo (app)', category: 'deuda', priority: 'medium', status: 'candidate', evidence: 'unos 41 revalidatePath ya no coinciden', createdAt: '2026-10-04T09:00:00.000Z', ...over })
 
 describe('band line', () => {
@@ -26,8 +26,8 @@ describe('band line', () => {
     expect(clip('x'.repeat(61))).toBe(`${'x'.repeat(59)}…`)
   })
   test('recap leaves out what is zero', () => {
-    expect(recapText({ since: 'ayer', fresh: 1, closed: 0 })).toBe('Desde ayer: 1 nuevo')
-    expect(recapText({ since: 'el 03/10', fresh: 0, closed: 2 })).toBe('Desde el 03/10: 2 cerrados en otra sesión')
+    expect(recapText('es', { since: 'ayer', fresh: 1, closed: 0 })).toBe('Desde ayer: 1 nuevo')
+    expect(recapText('es', { since: 'el 03/10', fresh: 0, closed: 2 })).toBe('Desde el 03/10: 2 cerrados en otra sesión')
   })
 })
 
@@ -187,7 +187,7 @@ describe('triage card', () => {
     startEdit: (id: string) => calls.push(`edit ${id}`),
     saveEdited: (id: string, text: string) => calls.push(`saveEdited ${id} ${text}`),
   }
-  const card = (over = {}) => ({ kind: 'candidate', item: item(), quote: item().evidence, state: null, repoName: 'web-app', editing: false, ...over })
+  const card = (over = {}) => ({ lang: 'es', kind: 'candidate', item: item(), quote: item().evidence, state: null, repoName: 'web-app', editing: false, ...over })
   test('emphasize bolds the first verbatim occurrence and leaves the rest alone', () => {
     expect(emphasize('a b c b', 'b')).toBe('a **b** c b')
     expect(emphasize('sin cita', 'otra')).toBe('sin cita')
@@ -259,7 +259,7 @@ describe('pane', () => {
   const actions = Object.fromEntries(['save', 'reject', 'doNow', 'done', 'dismiss', 'reopen', 'cyclePriority', 'keepFresh', 'confirm', 'keep', 'startEdit', 'saveEdited', 'add', 'push', 'dismissNotice'].map(n => [n, rec(n)])) as any
   const live = (over = {}) => ({ ...item({ id: 'o1', status: 'open', text: 'Arreglar el envío duplicado de correo', category: 'bug', file: 'lib/facturas.ts', branch: 'main', createdAt: '2026-10-04T09:48:00.000Z' }), stale: false, ...over })
   const model = (over = {}) => ({
-    now: NOW, branch: 'main', working: false, fileError: null, noRepo: false, repoName: 'web-app', repoPath: '/Users/m/web-app', notice: null, sync: 'synced', editing: null,
+    now: NOW, lang: 'es', branch: 'main', working: false, fileError: null, noRepo: false, repoName: 'web-app', repoPath: '/Users/m/web-app', notice: null, sync: 'synced', editing: null,
     waiting: [item()], live: [live()], closed: [], learned: 0, ...over,
   })
   const pane = (over = {}, surface = 'desktop') => renderPane(fake, surface, model(over), actions)
@@ -399,20 +399,136 @@ describe('pane', () => {
     expect(texts(pane()).some(t => t.startsWith('El barrido aprende'))).toBe(false)
   })
   test('ago', () => {
-    expect(ago('2026-10-04T10:00:00.000Z', NOW)).toBe('ahora')
-    expect(ago('2026-10-04T09:48:00.000Z', NOW)).toBe('hace 12 min')
-    expect(ago('2026-10-04T07:00:00.000Z', NOW)).toBe('hace 3 h')
-    expect(ago('2026-10-01T10:00:00.000Z', NOW)).toBe('hace 3 d')
-    expect(ago('ayer', NOW)).toBe('')
+    expect(ago('es', '2026-10-04T10:00:00.000Z', NOW)).toBe('ahora')
+    expect(ago('es', '2026-10-04T09:48:00.000Z', NOW)).toBe('hace 12 min')
+    expect(ago('es', '2026-10-04T07:00:00.000Z', NOW)).toBe('hace 3 h')
+    expect(ago('es', '2026-10-01T10:00:00.000Z', NOW)).toBe('hace 3 d')
+    expect(ago('es', 'ayer', NOW)).toBe('')
   })
 })
 
 describe('sinceText', () => {
   const NOW = Date.parse('2026-10-04T10:00:00.000Z')
   test('the same day, yesterday, or the date', () => {
-    expect(sinceText('2026-10-04T09:00:00.000Z', NOW)).toBe('hace un rato')
-    expect(sinceText('2026-10-03T10:00:00.000Z', NOW)).toBe('ayer')
-    expect(sinceText('2026-10-01T10:00:00.000Z', NOW)).toBe('el 01/10')
-    expect(sinceText('nunca', NOW)).toBe('la última vez')
+    expect(sinceText('es', '2026-10-04T09:00:00.000Z', NOW)).toBe('hace un rato')
+    expect(sinceText('es', '2026-10-03T10:00:00.000Z', NOW)).toBe('ayer')
+    expect(sinceText('es', '2026-10-01T10:00:00.000Z', NOW)).toBe('el 01/10')
+    expect(sinceText('es', 'nunca', NOW)).toBe('la última vez')
+  })
+})
+
+describe('in English', () => {
+  const calls: string[] = []
+  const acts = { openPane: () => calls.push('open'), undoClose: () => calls.push('undo'), doNow: (id: string) => calls.push(`doNow ${id}`) }
+  const en = (over = {}) => band({ lang: 'en', ...over })
+  const next = (over = {}) => item({ id: 'o1', status: 'open', text: 'Test the /plugin path', priority: 'medium', file: undefined, ...over })
+  test('band line: English words and English plurals', () => {
+    expect(bandLine(en({ fileError: 'json' }))).toEqual({ text: "Can't read the loose ends", action: 'open', label: 'View', warning: true })
+    expect(bandLine(en({ counts: counts({ candidates: 2, live: 1 }) }))).toEqual({ text: '2 to review · 1 open', action: 'open', label: 'Review' })
+    expect(bandLine(en({ counts: counts({ live: 3, high: 1 }), urgent: item({ text: 'Fix the login' }) }))?.text).toBe('Urgent: Fix the login')
+    expect(bandLine(en({ counts: counts({ live: 3 }), justClosed: { text: 'Duplicate email' } }))).toEqual({ text: 'Closed: Duplicate email', action: 'undo', label: 'Undo' })
+    expect(bandLine(en({ counts: counts({ live: 3 }), recap: { since: 'yesterday', fresh: 1, closed: 2 } }))?.text).toBe('Since yesterday: 1 new · 2 closed in another session')
+    expect(bandLine(en({ counts: counts({ live: 2 }) }))?.text).toBe('2 open')
+  })
+  test('band card: to review, just closed and the next one', () => {
+    expect(bandCard(en({ fileError: 'json' }))).toEqual({
+      border: 'error', top: { text: "Can't read the loose ends", color: 'warning' }, bottom: [{ text: 'The Notebook says why' }], button: null, link: { label: 'View', action: 'open' },
+    })
+    expect(bandCard(en({ counts: counts({ candidates: 1 }) }))?.top.text).toBe('1 loose end awaits your OK')
+    expect(bandCard(en({ counts: counts({ candidates: 3, live: 2, medium: 2 }), next: next(), sync: 'ahead' }))).toEqual({
+      border: 'claude', top: { text: '3 loose ends await your OK' }, bottom: [{ text: 'Next: Test the /plugin path' }, { text: '2 open' }, { text: 'not pushed' }], button: { label: 'Review', action: 'open' }, link: null,
+    })
+    expect(bandCard(en({ counts: counts({ live: 1, medium: 1 }), justClosed: { text: 'Update section' }, next: next() }))).toEqual({
+      border: 'success', top: { text: 'Closed: Update section' }, bottom: [{ text: '1 left' }, { text: 'next: Test the /plugin path' }], button: { label: 'Do it', action: 'doNow', id: 'o1' }, link: { label: 'Undo', action: 'undo' },
+    })
+    expect(bandCard(en({ justClosed: { text: 'The last one' } }))?.bottom).toEqual([{ text: 'Nothing left open' }])
+    expect(bandCard(en({ recap: { since: 'Oct 1', fresh: 0, closed: 2 } }))).toEqual({
+      border: 'promptBorder', top: { text: 'Since Oct 1: 2 closed in another session' }, bottom: [{ text: 'Nothing left open' }], button: null, link: { label: 'Notebook', action: 'open' },
+    })
+    expect(bandCard(en({ counts: counts({ live: 4, high: 1, medium: 1, low: 2 }), next: next({ priority: 'high' }), sync: 'synced' }))).toEqual({
+      border: 'error',
+      top: { text: 'Test the /plugin path', priority: 'high' },
+      bottom: [{ text: 'Urgent' }, { text: '1 urgent', priority: 'high' }, { text: '1 normal', priority: 'medium' }, { text: '2 low', priority: 'low' }, { text: 'pushed to origin' }],
+      button: { label: 'Do it', action: 'doNow', id: 'o1' },
+      link: { label: 'Notebook', action: 'open' },
+    })
+    expect(bandCard(en({ counts: counts({ live: 1, medium: 1 }), next: next({ status: 'doing' }), sync: 'failed' }))?.bottom).toEqual([{ text: 'In progress' }, { text: '1 normal', priority: 'medium' }, { text: 'push failed' }])
+    expect(bandCard(en({ counts: counts({ live: 1, low: 1 }), next: next({ priority: 'low' }), sync: 'local' }))?.bottom).toEqual([{ text: 'Next' }, { text: '1 low', priority: 'low' }, { text: 'only on this computer' }])
+  })
+  test('band: Chispa is described in English on the desktop; the terminal button says View', () => {
+    const desk = renderBand(fake, 'desktop', en({ counts: counts({ live: 1, medium: 1 }), next: next() }), acts)
+    expect(desk.props.children[0].props.alt).toBe('Chispa watching')
+    expect(byKey(desk, 'band-act').props.label).toBe('Do it')
+    expect(byKey(desk, 'band-line').props.text).toBe(`[Notebook](${OPEN_PANE_HREF})`)
+    const term = renderBand(fake, 'terminal', en({ mood: 'worried', counts: counts({ live: 1, high: 1 }), urgent: item({ text: 'Fix the login' }) }), acts)
+    expect(texts(term)).toEqual(['(•_•)!', 'Urgent: Fix the login'])
+    expect(byKey(term, 'open-pane').props.label).toBe('View')
+  })
+  test('triage card: candidate, proposal and answered lines', () => {
+    const noop = () => {}
+    const actions = { save: noop, reject: noop, confirm: noop, keep: noop, undo: noop, startEdit: noop, saveEdited: noop }
+    const card = (over = {}) => ({ lang: 'en', kind: 'candidate', item: item(), quote: item().evidence, state: null, repoName: 'web-app', editing: false, ...over })
+    const candidate = renderTriage(fake, 'desktop', card(), actions)
+    expect(texts(candidate)).toEqual(['Candidate loose end · debt · normal', 'Corregir los revalidatePath del grupo (app)'])
+    expect(['tri-save-c1', 'tri-reject-c1', 'tri-edit-c1'].map(k => byKey(candidate, k).props.label)).toEqual(['Save', 'Not a loose end', 'Edit'])
+    expect(byKey(renderTriage(fake, 'desktop', card({ editing: true }), actions), 'tri-edit-input-c1').props.submitLabel).toBe('save')
+    const proposed = item({ status: 'open', proposal: { quote: 'no longer calls twice', commit: 'a3f9c21', at: '2026-10-04T10:00:00.000Z' } })
+    const proposal = renderTriage(fake, 'desktop', card({ kind: 'proposal', item: proposed, quote: 'no longer calls twice' }), actions)
+    expect(texts(proposal)).toEqual(['Resolved? · commit a3f9c21', 'Corregir los revalidatePath del grupo (app)', 'Proof: “no longer calls twice”'])
+    expect([byKey(proposal, 'tri-confirm-c1').props.label, byKey(proposal, 'tri-keep-c1').props.label]).toEqual(['Yes, close', 'Still open'])
+    const said = (state: string, over = {}) => texts(renderTriage(fake, 'desktop', card({ state, ...over }), actions))[0]
+    expect(said('saved')).toBe('Saved in web-app')
+    expect(said('rejected')).toBe("Rejected. I won't propose things like this again.")
+    expect(said('closed', { item: item({ proof: { quote: 'q', commit: 'a3f9c21' } }) })).toBe('Closed with proof · a3f9c21')
+    expect(said('kept')).toBe('Still open.')
+    expect(said('withdrawn')).toBe('Withdrawn: resolved later')
+    expect(byKey(renderTriage(fake, 'desktop', card({ state: 'saved' }), actions), 'tri-undo-c1').props.label).toBe('Undo')
+  })
+  test('pane: headings, ref state, rows and controls', () => {
+    const NOW = Date.parse('2026-10-04T10:00:00.000Z')
+    const noop = () => {}
+    const actions = Object.fromEntries(['save', 'reject', 'doNow', 'done', 'dismiss', 'reopen', 'cyclePriority', 'keepFresh', 'confirm', 'keep', 'startEdit', 'saveEdited', 'add', 'push', 'dismissNotice'].map(n => [n, noop])) as any
+    const live = (over = {}) => ({ ...item({ id: 'o1', status: 'open', text: 'Fix the duplicate email', category: 'bug', file: 'lib/invoices.ts', branch: 'main', createdAt: '2026-10-04T09:48:00.000Z' }), stale: false, ...over })
+    const model = (over = {}) => ({
+      now: NOW, lang: 'en', branch: 'main', working: false, fileError: null, noRepo: false, repoName: 'web-app', repoPath: '/Users/m/web-app', notice: null, sync: 'synced', editing: null,
+      waiting: [item()], live: [live()], closed: [], learned: 0, ...over,
+    })
+    const pane = (over = {}) => renderPane(fake, 'desktop', model(over), actions)
+    const root = pane({ closed: [
+      item({ id: 'd1', status: 'done', text: 'Globals sheet', proof: { quote: 'q' }, closedAt: '2026-10-04T08:00:00.000Z' }),
+      item({ id: 'd2', status: 'expired', withdrawn: true, text: 'Withdrawn one', proof: { quote: 'q', commit: '9e1b7c2' }, closedAt: '2026-10-04T08:00:00.000Z' }),
+    ] })
+    expect(flat(root).filter(n => n?.type === 'Text' && n.props.bold).map(n => n.props.children)).toEqual(['web-app', 'To review', 'Open', 'Closed this week'])
+    expect(texts(root)).toEqual(expect.arrayContaining(['Up to date with origin', 'debt · 1 h ago', '“unos 41 revalidatePath ya no coinciden”', 'bug · 12 min ago', 'with proof', 'withdrawn · 9e1b7c2']))
+    expect(byKey(root, 'add-item').props).toMatchObject({ placeholder: 'Note a loose end…', submitLabel: 'note' })
+    expect(['save-c1', 'reject-c1', 'now-o1', 'done-o1', 'dismiss-o1', 'prio-o1', 'edit-o1'].map(k => byKey(root, k).props.label)).toEqual(['Save', 'Not a loose end', 'Do it', 'Done', 'Dismiss', 'normal', 'edit'])
+    expect(byKey(pane({ live: [live({ priority: 'high' })] }), 'prio-o1').props.label).toBe('urgent')
+    expect(texts(pane({ live: [live({ branch: 'fix/qa', status: 'doing' })] }))).toContain('bug · 12 min ago · created on fix/qa · in progress')
+    expect(texts(pane({ live: [live({ stale: true })] }))).toContain('Still relevant?')
+    expect(byKey(pane({ live: [live({ stale: true })] }), 'fresh-o1').props.label).toBe('Yes')
+    expect(texts(pane({ live: [live({ proposal: { quote: 'no longer calls twice', at: '2026-10-04T09:59:00.000Z' } })] }))).toEqual(expect.arrayContaining(['Resolved?', 'Proof: “no longer calls twice”']))
+    expect(texts(pane({ sync: 'local' }))).toContain('Only on this computer')
+    expect(texts(pane({ sync: 'ahead' }))).toContain('Changes not pushed')
+    expect(texts(pane({ sync: 'failed' }))).toContain("Couldn't push to origin")
+    expect(byKey(pane({ sync: 'ahead' }), 'push-now').props.label).toBe('Push')
+    expect(texts(pane({ waiting: [], live: [] }))).toContain('Nothing open in this repo.')
+    expect(texts(pane({ fileError: 'json' }))).toContain("Can't read the loose ends of /Users/m/web-app (refs/loose-ends): json. The panel recovers by itself as soon as they can be read.")
+    expect(texts(pane({ noRepo: true }))).toEqual(['This session is not inside a git repo.'])
+    expect(byKey(pane({ notice: 'n' }), 'notice-ok').props.label).toBe('Got it')
+    expect(texts(pane({ learned: 1 }))).toContain('The sweep learns from 1 rejection of yours')
+    expect(texts(pane({ learned: 4 }))).toContain('The sweep learns from 4 rejections of yours')
+  })
+  test('ago, sinceText and recapText', () => {
+    const NOW = Date.parse('2026-10-04T10:00:00.000Z')
+    expect(ago('en', '2026-10-04T10:00:00.000Z', NOW)).toBe('just now')
+    expect(ago('en', '2026-10-04T09:48:00.000Z', NOW)).toBe('12 min ago')
+    expect(ago('en', '2026-10-04T07:00:00.000Z', NOW)).toBe('3 h ago')
+    expect(ago('en', '2026-10-01T10:00:00.000Z', NOW)).toBe('3 d ago')
+    expect(sinceText('en', '2026-10-04T09:00:00.000Z', NOW)).toBe('earlier today')
+    expect(sinceText('en', '2026-10-03T10:00:00.000Z', NOW)).toBe('yesterday')
+    expect(sinceText('en', '2026-10-01T10:00:00.000Z', NOW)).toBe('Oct 1')
+    expect(sinceText('en', 'never', NOW)).toBe('last time')
+    expect(recapText('en', { since: 'yesterday', fresh: 1, closed: 0 })).toBe('Since yesterday: 1 new')
+    expect(recapText('en', { since: 'yesterday', fresh: 3, closed: 1 })).toBe('Since yesterday: 3 new · 1 closed in another session')
   })
 })

@@ -1,3 +1,4 @@
+import { t } from './i18n.mjs'
 const C = 4
 const W = 24
 const H = 20
@@ -8,13 +9,9 @@ const CONFETTI = ['#E5484D', '#F5C542', '#4ADE80', '#60A5FA', '#D97757']
 // In order of priority; lib/mood.mjs picks one.
 export const MOODS = ['note', 'worried', 'celebrate', 'working', 'idle', 'sleeping']
 
-export const MOOD_LABELS = {
-  note: 'Chispa con una nota: hay cabos por revisar',
-  worried: 'Chispa preocupada por un cabo urgente',
-  celebrate: 'Chispa celebrando un cierre',
-  working: 'Chispa trabajando',
-  idle: 'Chispa atenta',
-  sleeping: 'Chispa durmiendo',
+// What Chispa's image says to a screen reader, in the mod's language; an unknown mood reads as idle.
+export function moodLabel(lang, mood) {
+  return t(lang, `mood.${MOODS.includes(mood) ? mood : 'idle'}`)
 }
 
 export const TERMINAL_FACES = {

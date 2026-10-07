@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { FLASH_MS, SLEEP_AFTER_MS, bashFailed, chispaMood, isCommit, isPush } from '../lib/mood.mjs'
-import { MOOD_LABELS, MOODS, TERMINAL_FACES, chispaSvg } from '../lib/chispa.mjs'
+import { moodLabel, MOODS, TERMINAL_FACES, chispaSvg } from '../lib/chispa.mjs'
 
 const NOW = 1_000_000_000
 const base = { candidates: 0, urgent: 0, flashUntil: 0, working: false, lastActivity: NOW, now: NOW }
@@ -54,7 +54,7 @@ describe('chispa poses', () => {
       const svg = chispaSvg(mood)
       expect(svg).toContain('repeatCount="indefinite"')
       expect(svg.length).toBeLessThan(131072)
-      expect(MOOD_LABELS[mood]).toBeTruthy()
+      expect(moodLabel('es', mood)).toBeTruthy()
       expect(TERMINAL_FACES[mood]).toBeTruthy()
     }
   })
@@ -62,7 +62,7 @@ describe('chispa poses', () => {
     expect(MOODS).toEqual(['note', 'worried', 'celebrate', 'working', 'idle', 'sleeping'])
     for (const mood of MOODS) {
       expect(chispaSvg(mood)).toContain('repeatCount="indefinite"')
-      expect(MOOD_LABELS[mood]).toBeTruthy()
+      expect(moodLabel('es', mood)).toBeTruthy()
       expect(TERMINAL_FACES[mood]).toBeTruthy()
     }
     expect(chispaSvg('note')).toContain('#FDCBB2')

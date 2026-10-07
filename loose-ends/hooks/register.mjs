@@ -16,6 +16,7 @@ import {
 import { FLASH_MS, bashFailed, chispaMood, isCommit, isPush } from '../lib/mood.mjs'
 import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, relativeTo, repoName } from '../lib/repos.mjs'
 import { emphasize, renderBand, renderPane, renderTriage, sinceText } from '../lib/screens.mjs'
+import { pickLanguage } from '../lib/i18n.mjs'
 
 const MAX_WALK = 3
 const MAX_CACHE = 500
@@ -68,6 +69,24 @@ let firstTurnDone = false
 // Files whose open loose ends Claude was already told about this turn, relative to the session repo.
 const passed = new Set()
 const SEEN_FILE = 'loose-ends-seen.json'
+// The `language` option as register() receives it, and the language every text is drawn and sent in.
+let languageOption = 'auto'
+let lang = 'en'
+let languageReady = false
+
+// Fixes the language once per load: the option when it says es or en, otherwise (auto) the locale variables.
+// Every hook awaits it first, so no text is drawn or sent before it is known; a change of option reloads the module.
+async function resolveLanguage($) {
+  if (languageReady) return
+  let env = {}
+  if (languageOption !== 'es' && languageOption !== 'en') {
+    try {
+      env = { LC_ALL: await $.env.get('LC_ALL'), LC_MESSAGES: await $.env.get('LC_MESSAGES'), LANG: await $.env.get('LANG') }
+    } catch {}
+  }
+  lang = pickLanguage(languageOption, env)
+  languageReady = true
+}
 
 async function logDebug($, message) {
   try {
@@ -463,7 +482,7 @@ async function recordSeen($, root, { compare }) {
         seen = JSON.parse(await $.fs.read(path))
       } catch {}
       const r = recap(items, seen)
-      if (!firstTurnDone) recapNow = r && (r.fresh || r.closed) ? { since: sinceText(r.at, now), fresh: r.fresh, closed: r.closed } : null
+      if (!firstTurnDone) recapNow = r && (r.fresh || r.closed) ? { since: sinceText(lang, r.at, now), fresh: r.fresh, closed: r.closed } : null
       $.ui.invalidate('ui.render')
     }
     seenReady = true
@@ -621,6 +640,7 @@ async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, res
 function bandModel(now) {
   const c = counts(items)
   return {
+    lang,
     mood: chispaMood({ candidates: c.candidates, urgent: c.high, flashUntil, working, lastActivity, now }),
     counts: c,
     urgent: topUrgent(items),
@@ -636,6 +656,7 @@ function bandModel(now) {
 function paneModel(now) {
   return {
     now,
+    lang,
     branch,
     working,
     fileError,
@@ -666,7 +687,7 @@ function triageCards(text) {
     if (item.status === 'candidate' && !item.held && item.evidence && containsQuote(text, item.evidence)) cards.push({ kind: 'candidate', item, quote: item.evidence, state: null })
     else if (item.proposal && containsQuote(text, item.proposal.quote)) cards.push({ kind: 'proposal', item, quote: item.proposal.quote, state: null })
   }
-  return cards.map(c => ({ ...c, repoName: repoName(sessionRepo), editing: editing === c.item.id }))
+  return cards.map(c => ({ ...c, lang, repoName: repoName(sessionRepo), editing: editing === c.item.id }))
 }
 
 // One change the person makes to an item. With `state`, the card under its message remembers the answer and how
@@ -792,8 +813,11 @@ function itemActions($) {
   }
 }
 
-export function register(on) {
+export function register(on, options = {}) {
+  languageOption = options.language ?? 'auto'
+  languageReady = false
   on('session.start', async ($, e, next) => {
+    await resolveLanguage($)
     editing = null
     recapNow = null
     seenReady = false
@@ -829,6 +853,7 @@ export function register(on) {
 
   on('tool.call', async ($, e, next) => {
     if (e.agentId) return next(e)
+    await resolveLanguage($)
     lastActivity = await $.clock.now()
     const r = await next(e)
     trackRepos($, e)
@@ -850,6 +875,7 @@ export function register(on) {
   })
 
   on('turn.start', async ($, e, next) => {
+    await resolveLanguage($)
     working = true
     if (e.agentId) runningAgents.add(e.agentId)
     else notedThisTurn = false
@@ -870,6 +896,7 @@ export function register(on) {
   })
 
   on('turn.complete', async ($, e, next) => {
+    await resolveLanguage($)
     const r = await next(e)
     if (e.agentId) {
       runningAgents.delete(e.agentId)
@@ -909,6 +936,7 @@ export function register(on) {
   })
 
   on('tool.call', { tool: 'mcp__loose-ends__note_loose_end' }, async ($, e) => {
+    await resolveLanguage($)
     notedThisTurn = true
     if (String(e.text ?? '').trim().length < 3) return { result: TOOL_TOO_SHORT }
     let target = sessionRepo
@@ -928,17 +956,20 @@ export function register(on) {
   })
 
   on('prompt.suggest', async ($, e, next) => {
+    await resolveLanguage($)
     if (e.origin?.kind !== 'suggestion') return next(e)
     const item = suggestable(items)
     return item ? next({ ...e, text: suggestText(item) }) : next(e)
   })
 
   on('prompt.compose', async ($, e, next) => {
+    await resolveLanguage($)
     const r = await next(e)
     return { sections: [...r.sections, { id: 'loose-ends:guide', text: TOOL_GUIDE, scope: 'session' }] }
   })
 
   on('prompt.context', async ($, e, next) => {
+    await resolveLanguage($)
     const r = await next(e)
     await load($)
     const text = formatContext(live(items))
@@ -946,11 +977,13 @@ export function register(on) {
   })
 
   on('command.run', { command: 'pendientes' }, async ($) => {
+    await resolveLanguage($)
     await $.ui.open({ id: 'loose-ends', title: 'Cuaderno' })
     return {}
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await resolveLanguage($)
     if (e.props.hasSurvey) return next(e)
     const el = $.ui.resolve(e)
     const now = await $.clock.now()
@@ -966,12 +999,14 @@ export function register(on) {
   })
 
   on('ui.render', { component: 'Pane', requestId: 'loose-ends' }, async ($, e) => {
+    await resolveLanguage($)
     const el = $.ui.resolve(e)
     const now = await $.clock.now()
     return renderPane(el, e.surface, paneModel(now), itemActions($))
   })
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    await resolveLanguage($)
     const cards = triageCards(e.props.text)
     if (!cards.length) return next(e)
     const text = cards.reduce((t, c) => emphasize(t, c.quote), e.props.text)

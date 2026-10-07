@@ -25,6 +25,9 @@ type Opts = {
   home?: string | null
   // %USERPROFILE%, for when HOME is unset (Windows)
   userProfile?: string
+  // LC_ALL, LC_MESSAGES and LANG; left out, LANG=es_ES.UTF-8, so `auto` picks the Spanish the older tests were
+  // written in. `{}` means none is set.
+  env?: Record<string, string>
   // git toplevel -> the blob text its data ref holds
   refs?: Record<string, string>
   // git toplevel -> origin's data ref blob text ('' for an origin without the ref); toplevels not listed have no origin
@@ -95,7 +98,12 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
     return key === undefined ? null : repos[key]
   }
   on('session.root', () => ({ value: root }))
-  on('env.get', ($: any, e: any) => ({ value: e.name === 'USERPROFILE' ? opts.userProfile : opts.home === null ? undefined : opts.home ?? '/Users/m' }))
+  const locale = opts.env ?? { LANG: 'es_ES.UTF-8' }
+  on('env.get', ($: any, e: any) => {
+    if (e.name === 'USERPROFILE') return { value: opts.userProfile }
+    if (e.name === 'HOME') return { value: opts.home === null ? undefined : opts.home ?? '/Users/m' }
+    return { value: locale[e.name] }
+  })
   on('session.usage', () => ({ value: { startedAt: opts.startedAt ?? clock.now(), context: { tokens: 0, window: 200000, percent: 0 }, rateLimits: [] } }))
   on('fs.exists', ($: any, e: any) => { reads.push(fsKey(e.path)); return { value: fsKey(e.path) in fs } })
   on('fs.read', ($: any, e: any) => { reads.push(fsKey(e.path)); return { value: fs[fsKey(e.path)] } })
