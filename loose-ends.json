@@ -250,8 +250,9 @@
       "file": "loose-ends/hooks/register.mjs",
       "branch": "master",
       "createdAt": "2026-10-07T18:28:24.801Z",
-      "updatedAt": "2026-10-07T18:28:24.801Z",
-      "status": "candidate"
+      "updatedAt": "2026-10-07T18:32:28.947Z",
+      "status": "rejected",
+      "closedAt": "2026-10-07T18:32:28.947Z"
     },
     {
       "id": "57df2d80",
