@@ -241,8 +241,13 @@
       "evidence": "Todo esto con tests en detect.test.ts.",
       "branch": "master",
       "createdAt": "2026-10-07T18:22:09.258Z",
-      "updatedAt": "2026-10-07T18:36:05.380Z",
-      "status": "doing"
+      "updatedAt": "2026-10-07T18:36:32.019Z",
+      "status": "doing",
+      "proposal": {
+        "quote": "Cabo f986928e resuelto. La mayor parte de esos tests ya estaba en detect.test.ts desde el commit 45bcf46",
+        "commit": "9bf1f4c",
+        "at": "2026-10-07T18:36:32.019Z"
+      }
     },
     {
       "id": "7a423810",
