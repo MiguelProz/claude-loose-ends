@@ -326,8 +326,13 @@
       "held": true,
       "branch": "master",
       "createdAt": "2026-10-07T21:30:38.311Z",
-      "updatedAt": "2026-10-07T21:30:38.311Z",
-      "status": "candidate"
+      "updatedAt": "2026-10-07T21:32:14.307Z",
+      "status": "expired",
+      "withdrawn": true,
+      "proof": {
+        "quote": "Cuando me pases las capturas, las añado al README."
+      },
+      "closedAt": "2026-10-07T21:32:14.307Z"
     }
   ]
 }
