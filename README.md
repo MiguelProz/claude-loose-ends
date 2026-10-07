@@ -14,7 +14,7 @@ lets you keep what matters, and puts the next thing to do one click away.
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-2.1.287%2B-D97757.svg)](https://claude.com/claude-code)
 [![Languages](https://img.shields.io/badge/languages-English%20%7C%20Espa%C3%B1ol-lightgrey.svg)](#language)
 
-<img src="media/band.png" width="720" alt="The loose-ends band above the Claude Code prompt: Chispa, the next loose end, counts by priority and a Do it button">
+<img src="media/demo.gif" width="720" alt="loose-ends in action: a candidate appears, gets saved, the band shows it as the next loose end, Claude works on it, it closes and Chispa rests">
 
 </div>
 
