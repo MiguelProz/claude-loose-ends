@@ -37,6 +37,24 @@ attention.
   To review, Open (change the priority, edit, Do it, Done, Dismiss) and Closed
   this week.
 
+## Screenshots
+
+The band above the prompt names the next loose end and starts it with **Do it**:
+
+<img src="media/band.png" width="620" alt="The band: Chispa worried, the urgent loose end with its file, counts by priority and Do it">
+
+With nothing open, Chispa says something instead:
+
+<img src="media/band-idle.png" width="620" alt="The empty band: Chispa and a short phrase">
+
+A candidate shows up under the message where Claude mentioned it, and you decide:
+
+<img src="media/card.png" width="620" alt="A candidate card with Save, Not a loose end and Edit">
+
+The Notebook (`/loose-ends`) holds what is to review, what is open and what closed this week:
+
+<img src="media/notebook.png" width="460" alt="The Notebook pane with To review, Open and Closed this week">
+
 ## Chispa
 
 | | | |
