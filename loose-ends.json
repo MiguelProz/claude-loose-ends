@@ -267,6 +267,18 @@
       "updatedAt": "2026-10-07T18:32:30.248Z",
       "status": "rejected",
       "closedAt": "2026-10-07T18:32:30.248Z"
+    },
+    {
+      "id": "10932fba",
+      "text": "Añadir tests en `detect.test.ts` para validar el filtro determinista que rechaza frases con «corregido», «arreglado», «he lanzado», «decide», «probar», «ejecutar», «enviar», «mergear» y «fusionar y subir»",
+      "category": "test",
+      "priority": "medium",
+      "source": "sweep",
+      "evidence": "Descarta lo que ya está corregido, lo que está en curso y lo que es decisión tuya. También descarta probar, ejecutar, enviar, mergear y «fusionar y subir».",
+      "branch": "master",
+      "createdAt": "2026-10-07T18:34:21.439Z",
+      "updatedAt": "2026-10-07T18:34:21.439Z",
+      "status": "candidate"
     }
   ]
 }
