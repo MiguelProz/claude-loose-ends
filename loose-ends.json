@@ -333,6 +333,19 @@
         "quote": "Cuando me pases las capturas, las añado al README."
       },
       "closedAt": "2026-10-07T21:32:14.307Z"
+    },
+    {
+      "id": "01c1f6fa",
+      "text": "Corregir en media/social-preview.png la línea con la URL que se sale por la derecha",
+      "category": "bug",
+      "priority": "medium",
+      "source": "sweep",
+      "evidence": "la línea con la URL se sale por la derecha",
+      "held": true,
+      "branch": "master",
+      "createdAt": "2026-10-07T21:43:52.322Z",
+      "updatedAt": "2026-10-07T21:43:52.322Z",
+      "status": "candidate"
     }
   ]
 }
