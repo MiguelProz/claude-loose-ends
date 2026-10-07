@@ -215,6 +215,18 @@
         "commit": "2c47e9a"
       },
       "closedAt": "2026-10-06T21:51:39.120Z"
+    },
+    {
+      "id": "8ae8c5aa",
+      "text": "Implementar estado `pendiente` para candidatos del barrido que esperen confirmación en el siguiente turno antes de mostrarse",
+      "category": "deuda",
+      "priority": "high",
+      "source": "sweep",
+      "evidence": "Los candidatos del barrido se quedan en un estado pendiente durante un turno.",
+      "branch": "master",
+      "createdAt": "2026-10-07T18:22:09.166Z",
+      "updatedAt": "2026-10-07T18:22:09.166Z",
+      "status": "candidate"
     }
   ]
 }
