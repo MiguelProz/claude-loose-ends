@@ -356,8 +356,9 @@
       "evidence": "entre la nota y el cuerpo de Chispa queda un hueco que parece una franja negra",
       "branch": "master",
       "createdAt": "2026-10-07T21:43:52.409Z",
-      "updatedAt": "2026-10-07T21:45:52.064Z",
-      "status": "candidate"
+      "updatedAt": "2026-10-07T21:53:37.239Z",
+      "status": "rejected",
+      "closedAt": "2026-10-07T21:53:37.239Z"
     }
   ]
 }
