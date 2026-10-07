@@ -5,6 +5,7 @@ import {
 import {
   LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
   markDone, nextItem, parseItems, propose, proposeClose, prune, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
+  unwithdraw, withdraw,
 } from '../lib/items.mjs'
 import { rejectReason } from '../lib/filter.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
@@ -520,16 +521,18 @@ function trackRepos($, e) {
   touchChain = touchChain.then(() => collectTouched($, set, paths, isFile)).catch(err => logDebug($, `loose-ends: resolver los repos tocados falló (${err?.message ?? err})`))
 }
 
-// Haiku reads the answer: new candidates only from long answers, closures for the live items in any answer.
+// Haiku reads the answer: new candidates only from long answers; in any answer, closures for the live items and
+// the candidates still waiting, which a later answer often shows done.
 async function sweep($, answer, touchedNow, commit) {
   const others = (await touchedNow).filter(repo => repo !== sessionRepo)
   if (!sessionRepo && !others.length) return
   const repos = others.length ? candidateRepos(sessionRepo, others) : []
   const open = live(items)
+  const waiting = candidates(items)
   const r = await $.model.complete({
     model: SWEEP_MODEL,
     system: SWEEP_SYSTEM,
-    prompt: buildSweepPrompt(answer, open, candidates(items), repos, rejectedTexts(items)),
+    prompt: buildSweepPrompt(answer, open, waiting, repos, rejectedTexts(items)),
     maxTokens: 800,
     timeoutMs: 20000,
   })
@@ -537,12 +540,13 @@ async function sweep($, answer, touchedNow, commit) {
     await logDebug($, `loose-ends: barrido omitido (${r.reason})`)
     return
   }
-  const parsed = parseSweepReply(r.text, open.map(i => i.id), repos, answer, { allowNew: shouldSweep(answer) })
+  const parsed = parseSweepReply(r.text, [...open, ...waiting].map(i => i.id), repos, answer, { allowNew: shouldSweep(answer) })
   if (!parsed) {
     await logDebug($, 'loose-ends: barrido con JSON inválido')
     return
   }
   if (parsed.dropped) await logDebug($, `loose-ends: ${parsed.dropped} ${parsed.dropped === 1 ? 'propuesta descartada' : 'propuestas descartadas'} por cita no literal`)
+  for (const { text, reason } of parsed.skipped) await logDebug($, `loose-ends: candidato del barrido descartado (${reason}): ${text}`)
   for (const { repo, ...fresh } of parsed.fresh) {
     const target = repo ?? sessionRepo
     if (!target) continue
@@ -555,11 +559,20 @@ async function sweep($, answer, touchedNow, commit) {
     const now = await nowIso($)
     await guarded($, 'proponer los cierres', async () => {
       const res = await mutate($, list => {
-        const next = parsed.resolved.reduce((acc, r) => proposeClose(acc, r.id, { quote: r.quote, commit }, now), list)
-        return { items: next, proposed: parsed.resolved.map(r => r.id).filter(id => next.find(i => i.id === id) !== list.find(i => i.id === id)) }
+        // a live item gets a closure for the person to confirm; a candidate nobody accepted yet goes away by itself
+        const next = parsed.resolved.reduce((acc, r) => withdraw(proposeClose(acc, r.id, { quote: r.quote, commit }, now), r.id, { quote: r.quote, commit }, now), list)
+        const changed = parsed.resolved.map(r => ({ before: list.find(i => i.id === r.id), after: next.find(i => i.id === r.id) })).filter(c => c.before && c.after !== c.before)
+        return { items: next, changed }
       })
-      // a card's Deshacer would put back the item without the closure just proposed
-      for (const id of res?.proposed ?? []) triage.delete(id)
+      for (const { before, after } of res?.changed ?? []) {
+        // a card's Deshacer would put back the item without the closure just proposed
+        triage.delete(before.id)
+        // the withdrawn candidate's card says so under its message, and Deshacer brings it back to review
+        if (before.status === 'candidate' && after.status !== 'candidate' && before.evidence) {
+          triage.set(before.id, { kind: 'candidate', quote: before.evidence, state: 'withdrawn', previous: before })
+          await logDebug($, `loose-ends: candidato retirado, resuelto después: ${before.text}`)
+        }
+      }
     })
   }
 }
@@ -724,7 +737,8 @@ function itemActions($) {
     doNow: id => pressNow($, id),
     done: id => background($, closeWith($, id, markDone, null), 'cerrar el cabo'),
     dismiss: id => background($, act($, id, dismiss), 'descartar el cabo'),
-    reopen: id => background($, act($, id, reopen), 'reabrir el cabo'),
+    // ↺ reopens a closed item, or brings a withdrawn candidate back to review
+    reopen: id => background($, act($, id, (list, target, now) => unwithdraw(reopen(list, target, now), target, now)), 'reabrir el cabo'),
     cyclePriority: id =>
       background($, act($, id, (list, target, now) => setPriority(list, target, NEXT_PRIORITY[list.find(i => i.id === target)?.priority] ?? 'medium', now)), 'cambiar la prioridad'),
     keepFresh: id => background($, act($, id, touch), 'mantener el cabo'),
@@ -829,7 +843,7 @@ export function register(on) {
       $.clock.after(500, () => pressNow($, id))
     } else if (suggestable(items)) $.clock.after(500, () => background($, suggestUrgent($), 'sugerir el cabo urgente'))
     if (e.reason === 'answer' && typeof e.answer === 'string' && e.answer.trim()) {
-      if (shouldSweep(e.answer) || live(items).some(i => i.status === 'doing')) {
+      if (shouldSweep(e.answer) || live(items).some(i => i.status === 'doing') || candidates(items).length) {
         const set = touched
         let commit = null
         await guarded($, 'leer el commit del turno', async () => {

@@ -96,6 +96,14 @@ export const keepOpen = (items, id, now) => change(items, id, ['open', 'doing'],
 export const markDone = (items, id, now) => change(items, id, ['open', 'doing'], { status: 'done', proposal: undefined, closedAt: now }, now)
 export const dismiss = (items, id, now) => change(items, id, ['open', 'doing'], { status: 'dismissed', proposal: undefined, closedAt: now }, now)
 export const reopen = (items, id, now) => change(items, id, ['done', 'dismissed'], { status: 'open', proof: undefined, closedAt: undefined }, now)
+// A candidate a later answer shows done goes away by itself, with the sentence that proves it; ↺ brings it back to
+// review. It is stored as expired with `withdrawn`, a state 0.4 already reads and leaves alone.
+export const withdraw = (items, id, { quote, commit }, now) =>
+  change(items, id, ['candidate'], { status: 'expired', withdrawn: true, proof: { quote, ...(commit ? { commit } : {}) }, closedAt: now }, now)
+export const isWithdrawn = item => item.status === 'expired' && item.withdrawn === true
+export function unwithdraw(items, id, now) {
+  return items.map(i => (i.id === id && isWithdrawn(i) ? { ...i, status: 'candidate', withdrawn: undefined, proof: undefined, closedAt: undefined, updatedAt: now } : i))
+}
 export const touch = (items, id, now) => change(items, id, ['open', 'doing'], {}, now)
 
 export function proposeClose(items, id, { quote, commit }, now) {
@@ -148,7 +156,7 @@ export const isStale = (item, now) => LIVE.has(item.status) && now - touched(ite
 
 export function closedRecently(items, now) {
   return items
-    .filter(i => (i.status === 'done' || i.status === 'dismissed') && msOf(i.closedAt) >= now - CLOSED_WINDOW_MS)
+    .filter(i => (i.status === 'done' || i.status === 'dismissed' || isWithdrawn(i)) && msOf(i.closedAt) >= now - CLOSED_WINDOW_MS)
     .sort((a, b) => msOf(b.closedAt) - msOf(a.closedAt))
 }
 

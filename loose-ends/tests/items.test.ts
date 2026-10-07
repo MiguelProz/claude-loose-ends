@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
   CATEGORIES, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live, nextItem,
-  markDone, parseItems, propose, proposeClose, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap, prune, CLOSED_RETENTION_MS, REJECTED_KEEP,
+  markDone, parseItems, propose, proposeClose, withdraw, unwithdraw, isWithdrawn, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap, prune, CLOSED_RETENTION_MS, REJECTED_KEEP,
 } from '../lib/items.mjs'
 
 const T0 = '2026-10-04T10:00:00.000Z'
@@ -96,6 +96,18 @@ describe('transitions', () => {
     expect(get(back)).toMatchObject({ status: 'open' })
     expect(get(back).closedAt).toBeUndefined()
     expect(reopen(one(), 'c1', T1)).toEqual(one())
+  })
+  test('withdraw takes only a candidate, keeps the proof as expired, and unwithdraw brings it back', () => {
+    const gone = withdraw(one(), 'c1', { quote: 'ya está arreglado', commit: 'abc1234' }, T1)
+    expect(get(gone)).toMatchObject({ status: 'expired', withdrawn: true, proof: { quote: 'ya está arreglado', commit: 'abc1234' }, closedAt: T1 })
+    expect(isWithdrawn(get(gone))).toBe(true)
+    expect(closedRecently(gone, Date.parse(T1)).map(i => i.id)).toEqual(['c1'])
+    expect(withdraw(save(one(), 'c1', T0), 'c1', { quote: 'q' }, T1)).toEqual(save(one(), 'c1', T0))
+    const back = unwithdraw(gone, 'c1', T1)
+    expect(get(back)).toMatchObject({ status: 'candidate' })
+    expect(get(back).withdrawn).toBeUndefined()
+    expect(get(back).proof).toBeUndefined()
+    expect(unwithdraw(one(), 'c1', T1)).toEqual(one())
   })
   test('setPriority, editText and touch', () => {
     const open = save(one(), 'c1', T0)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { MIN_ANSWER, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
+import { MIN_ANSWER, buildSweepPrompt, containsQuote, parseSweepReply, sentenceAround, sentenceVerdict, shouldSweep } from '../lib/detect.mjs'
 import {
   NOT_A_REPO, SUGGEST_PREFIX, SWEEP_SYSTEM, TOOL_GUIDE, TOOL_ID, TOOL_SCHEMA, doNowText, formatContext, passingText, suggestText, toolProposed, toolRejected, toolUnreadable,
 } from '../lib/texts.mjs'
@@ -19,11 +19,10 @@ describe('sweep prompt', () => {
     expect(shouldSweep('x'.repeat(500))).toBe(true)
     expect(shouldSweep(undefined as any)).toBe(false)
   })
-  test('lists live items with ids, what waits without ids, the rejected examples, and fences the answer', () => {
+  test('lists live items and what waits with ids, the rejected examples, and fences the answer', () => {
     const p = buildSweepPrompt('respuesta', [item()], [item({ id: 'w1', text: 'Candidato pendiente' })], [], ['Comprobar el CI', 'Esperar el despliegue'])
     expect(p).toContain('Cabos abiertos:\n- a1: Tipar team-drafts')
-    expect(p).toContain('Por revisar (no los repitas):\n- Candidato pendiente')
-    expect(p).not.toContain('w1')
+    expect(p).toContain('Por revisar (no los repitas; si la respuesta los deja hechos, van en "resolved"):\n- w1: Candidato pendiente')
     expect(p).toContain('Ejemplos que el usuario rechazó (no propongas nada parecido):\n- Comprobar el CI\n- Esperar el despliegue')
     expect(p.endsWith('<<<\nrespuesta\n>>>')).toBe(true)
   })
@@ -54,6 +53,7 @@ describe('sweep reply', () => {
       ],
       resolved: [],
       dropped: 0,
+      skipped: [],
     })
   })
   test('broken replies give null', () => {
@@ -126,6 +126,46 @@ describe('sweep reply', () => {
   })
 })
 
+describe('the whole sentence', () => {
+  const ANSWER_S = [
+    'Arreglé el parser. El bug del panel sigue roto en Safari. Corregido.',
+    'He lanzado dos agentes que arreglan el test de fechas.',
+    'El login todavía no está resuelto del todo.',
+    '- Queda pendiente tipar team-drafts, no lo he tocado.',
+    'Decidir si usamos zod es decisión tuya.',
+    'El caché sigue sin invalidarse. Lo arreglo con el panel en la tanda 2.',
+  ].join('\n')
+  const verdict = (quote: string) => sentenceVerdict(sentenceAround(ANSWER_S, quote))
+  test('the sentence holding a quote comes whole, with a short sentence right after it', () => {
+    expect(sentenceAround(ANSWER_S, 'sigue roto en Safari')).toBe('el bug del panel sigue roto en safari. corregido.')
+    expect(sentenceAround(ANSWER_S, 'tipar team-drafts')).toBe('queda pendiente tipar team-drafts, no lo he tocado.')
+    expect(sentenceAround(ANSWER_S, 'nada de esto se dijo')).toBe(null)
+  })
+  test('done, under way or left to the person is not a loose end; a negated done is', () => {
+    expect(verdict('El bug del panel sigue roto en Safari')).toBe('la frase dice que ya está hecho')
+    expect(verdict('dos agentes que arreglan el test de fechas')).toBe('la frase dice que se está haciendo')
+    expect(verdict('Decidir si usamos zod')).toBe('la frase deja una decisión al usuario')
+    expect(verdict('El login todavía no está resuelto')).toBe(null)
+    expect(verdict('Queda pendiente tipar team-drafts')).toBe(null)
+  })
+  test('the sweep drops those candidates and says why', () => {
+    const reply = JSON.stringify({
+      new: [
+        { text: 'Arreglar el panel en Safari', category: 'bug', evidence: 'El bug del panel sigue roto en Safari' },
+        { text: 'Invalidar el caché', category: 'bug', evidence: 'El caché sigue sin invalidarse' },
+        { text: 'Tipar team-drafts', category: 'deuda', evidence: 'Queda pendiente tipar team-drafts' },
+      ],
+      resolved: [],
+    })
+    const parsed = parseSweepReply(reply, [], [], ANSWER_S)
+    expect(parsed?.fresh.map(f => f.text)).toEqual(['Tipar team-drafts'])
+    expect(parsed?.skipped).toEqual([
+      { text: 'Arreglar el panel en Safari', reason: 'la frase dice que ya está hecho' },
+      { text: 'Invalidar el caché', reason: 'la frase dice que se está haciendo' },
+    ])
+  })
+})
+
 describe('texts', () => {
   test('tool id and schema: category is required and closed', () => {
     expect(TOOL_ID).toBe('mcp__loose-ends__note_loose_end')
@@ -138,7 +178,7 @@ describe('texts', () => {
       expect(text).toContain('trabajo concreto')
       expect(text).toContain('categoría')
     }
-    for (const phrase of ['comprobar o verificar', 'esperar o vigilar', 'decidir', 'hacer push o desplegar', 'como máximo 2', '"quote"', '"category"', 'Repos candidatos', '"repo"']) expect(SWEEP_SYSTEM).toContain(phrase)
+    for (const phrase of ['comprobar o verificar', 'esperar o vigilar', 'decidir', 'hacer push o desplegar', 'como máximo 2', '"quote"', '"category"', 'Repos candidatos', '"repo"', 'se está arreglando', 'queda pendiente', 'Por revisar']) expect(SWEEP_SYSTEM).toContain(phrase)
     expect(TOOL_GUIDE).toContain(TOOL_ID)
     expect(TOOL_GUIDE).toContain('"file"')
     expect(TOOL_GUIDE).toContain('"repo"')

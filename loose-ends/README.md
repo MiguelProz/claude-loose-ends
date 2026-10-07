@@ -8,11 +8,17 @@ Cuaderno de la sesión para Claude Code, con Chispa.
   `note_loose_end` y una categoría (`bug`, `deuda`, `test`, `aviso`, `mejora`),
   y Haiku (`claude-haiku-4-5-20251001`) tras cada respuesta de 500 caracteres o
   más, citando literalmente la frase. Antes, un filtro fijo descarta lo que no
-  es trabajo sobre el código (comprobar, esperar, decidir, avisar, hacer push,
-  desplegar), lo repetido y lo parecido a lo que ya rechazaste.
+  es trabajo sobre el código (comprobar, probar, ejecutar, esperar, decidir,
+  avisar, hacer push o merge, desplegar, enviar a terceros), lo repetido y lo
+  parecido a lo que ya rechazaste. Del barrido descarta además lo que la frase
+  entera da por hecho («… Corregido.»), lo que dice que ya se está haciendo
+  («he lanzado dos agentes que lo arreglan», «lo arreglo en la tanda 2») y lo
+  que deja como decisión tuya.
 - **Tú decides**: el candidato aparece bajo el mensaje de Claude donde nació,
   con la frase en negrita, y `Guardar`, `No es un cabo` o `Editar`. Lo que no
-  revises espera en el panel y caduca a los 7 días. Cada «No es un cabo» enseña
+  revises espera en el panel y caduca a los 7 días. Si una respuesta posterior
+  lo deja hecho, se retira solo: la tarjeta dice «Retirado: resuelto después»
+  con `Deshacer`, y en Cerrados esta semana `↺` lo devuelve a revisión. Cada «No es un cabo» enseña
   al barrido: los últimos 20 van en su prompt.
 - **Cierre con prueba**: Haiku nunca cierra nada. Si una respuesta deja un cabo
   hecho, propone «¿Resuelto?» con la frase que lo prueba y, si el turno hizo

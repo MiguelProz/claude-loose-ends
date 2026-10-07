@@ -245,6 +245,8 @@ describe('triage card', () => {
     expect(said('closed', { item: item({ proof: { quote: 'q', commit: 'a3f9c21' } }) })).toBe('Cerrado con prueba · a3f9c21')
     expect(said('closed')).toBe('Cerrado con prueba')
     expect(said('kept')).toBe('Sigue abierto.')
+    expect(said('withdrawn', { item: item({ proof: { quote: 'q', commit: 'a3f9c21' } }) })).toBe('Retirado: resuelto después · a3f9c21')
+    expect(said('withdrawn')).toBe('Retirado: resuelto después')
     byKey(renderTriage(fake, 'desktop', card({ state: 'saved' }), actions), 'tri-undo-c1').props.onPress()
     expect(calls).toEqual(['undo c1'])
   })

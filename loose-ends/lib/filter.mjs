@@ -1,7 +1,11 @@
 import { CATEGORIES, normalize } from './items.mjs'
 
-// Openings of what is not a loose end: checking, waiting, deciding, reporting, pushing, deploying.
-export const BANNED_STARTS = ['verificar', 'comprobar', 'confirmar', 'revisar', 'esperar', 'vigilar', 'decidir', 'informar', 'reportar', 'preguntar', 'avisar', 'hacer push', 'desplegar']
+// Openings of what is not a loose end: checking, trying, running, waiting, deciding, reporting, pushing, merging,
+// deploying and sending to third parties.
+export const BANNED_STARTS = [
+  'verificar', 'comprobar', 'confirmar', 'revisar', 'probar', 'ejecutar', 'lanzar', 'esperar', 'vigilar', 'decidir', 'informar', 'reportar', 'preguntar', 'avisar',
+  'hacer push', 'subir la rama', 'subir los cambios', 'hacer merge', 'mergear', 'desplegar', 'enviar',
+]
 export const SIMILARITY = 0.6
 export const REJECTED_WINDOW = 50
 // What a candidate must not repeat: what waits for the person and what is still to do.

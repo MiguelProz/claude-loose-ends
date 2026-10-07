@@ -145,6 +145,7 @@ const SAID = {
   rejected: () => 'Descartado. No volveré a proponer cosas así.',
   closed: card => `Cerrado con prueba${card.item.proof?.commit ? ` · ${card.item.proof.commit}` : ''}`,
   kept: () => 'Sigue abierto.',
+  withdrawn: card => `Retirado: resuelto después${card.item.proof?.commit ? ` · ${card.item.proof.commit}` : ''}`,
 }
 
 // The card under the message where a candidate or a proposed closure was born.
@@ -296,8 +297,9 @@ function liveRow(el, surface, item, m, actions) {
 
 // One line per closed item: the text is cut to fit, so the check, the proof and ↺ always show.
 function closedRow(el, item, actions) {
-  const proof = item.proof?.commit ?? (item.proof ? 'con prueba' : '')
-  const dismissed = item.status === 'dismissed'
+  const withdrawn = item.status === 'expired' && item.withdrawn === true
+  const proof = withdrawn ? `retirado${item.proof?.commit ? ` · ${item.proof.commit}` : ''}` : item.proof?.commit ?? (item.proof ? 'con prueba' : '')
+  const dismissed = item.status === 'dismissed' || withdrawn
   const parts = [
     el.Text({ ...(dismissed ? { dimColor: true } : { color: 'success' }), children: '✓' }),
     el.Box({ flexGrow: 1, flexShrink: 1, minWidth: 0, children: [el.Text({ wrap: 'truncate-end', dimColor: dismissed, strikethrough: dismissed, children: item.text })] }),
