@@ -310,10 +310,9 @@
       "priority": "low",
       "source": "sweep",
       "evidence": "No dejó traza y no se repitió en 3 pasadas seguidas. Lo dejo sin tocar mientras no vuelva a pasar.",
-      "held": true,
       "branch": "master",
       "createdAt": "2026-10-07T18:40:53.542Z",
-      "updatedAt": "2026-10-07T18:40:53.542Z",
+      "updatedAt": "2026-10-07T19:49:39.764Z",
       "status": "candidate"
     }
   ]
