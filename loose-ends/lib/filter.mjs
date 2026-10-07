@@ -3,15 +3,18 @@ import { t } from './i18n.mjs'
 
 // Openings of what is not a loose end, per language: checking, trying, running, waiting, deciding, reporting, pushing,
 // merging, deploying and sending to third parties. Both lists always apply, because Claude may answer in a language
-// other than the mod's. English "merge" alone is a refactor as often as a git merge, so only its git forms are here.
+// other than the mod's. English verbs like merge, check, run, test, push or deploy are as often code work as chores, so they are banned only with their second word; the bare ones are those that are never code work.
 export const BANNED_STARTS = {
   es: [
     'verificar', 'comprobar', 'confirmar', 'revisar', 'probar', 'ejecutar', 'lanzar', 'esperar', 'vigilar', 'decidir', 'informar', 'reportar', 'preguntar', 'avisar',
     'hacer push', 'subir la rama', 'subir los cambios', 'subir a main', 'hacer merge', 'mergear', 'fusionar y subir', 'fusionar la rama', 'desplegar', 'enviar',
   ],
   en: [
-    'verify', 'check', 'confirm', 'review', 'test', 'try', 'run', 'execute', 'launch', 'wait', 'watch', 'monitor', 'decide', 'inform', 'report', 'ask', 'tell', 'notify',
-    'push', 'merge the branch', 'merge and push', 'merge into main', 'merge to main', 'deploy', 'send',
+    'verify', 'confirm', 'wait', 'decide', 'inform', 'notify', 'ask', 'tell',
+    'push to', 'push origin', 'push the branch', 'push changes', 'merge the branch', 'merge and push', 'merge into main', 'merge to main',
+    'deploy to', 'deploy the', 'check that', 'check whether', 'check if', 'run the tests', 'run the test suite', 'run ci', 'run the ci',
+    'test manually', 'test in production', 'test on staging', 'review the pr', 'review the pull request', 'report back', 'report to',
+    'watch the ci', 'watch the deploy', 'monitor the ci', 'monitor the deploy', 'monitor the deployment',
   ],
 }
 const ALL_BANNED = [...BANNED_STARTS.es, ...BANNED_STARTS.en].map(start => start.split(' '))

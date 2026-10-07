@@ -19,17 +19,14 @@ describe('words and banned openings', () => {
     expect(startsBanned('Fusionar y subir a main los commits de la rama')).toBe(true)
   })
   test('every English banned opening is caught, also after need to, should or must', () => {
-    expect(BANNED_STARTS.en).toEqual([
-      'verify', 'check', 'confirm', 'review', 'test', 'try', 'run', 'execute', 'launch', 'wait', 'watch', 'monitor', 'decide', 'inform', 'report', 'ask', 'tell', 'notify',
-      'push', 'merge the branch', 'merge and push', 'merge into main', 'merge to main', 'deploy', 'send',
-    ])
+    expect(BANNED_STARTS.en).toEqual(['verify', 'confirm', 'wait', 'decide', 'inform', 'notify', 'ask', 'tell', 'push to', 'push origin', 'push the branch', 'push changes', 'merge the branch', 'merge and push', 'merge into main', 'merge to main', 'deploy to', 'deploy the', 'check that', 'check whether', 'check if', 'run the tests', 'run the test suite', 'run ci', 'run the ci', 'test manually', 'test in production', 'test on staging', 'review the pr', 'review the pull request', 'report back', 'report to', 'watch the ci', 'watch the deploy', 'monitor the ci', 'monitor the deploy', 'monitor the deployment'])
     for (const start of BANNED_STARTS.en) expect(startsBanned(`${start[0].toUpperCase()}${start.slice(1)} the deploy thing`)).toBe(true)
-    expect(startsBanned('We need to check the logs on staging')).toBe(true)
+    expect(startsBanned('We need to check that the logs are on staging')).toBe(true)
     expect(startsBanned('Need to verify the migration')).toBe(true)
     expect(startsBanned('We have to wait for CI')).toBe(true)
     expect(startsBanned('Should deploy the worker again')).toBe(true)
     expect(startsBanned('Must notify the team about the API change')).toBe(true)
-    expect(startsBanned('Run npm test in CI')).toBe(true)
+    for (const text of ['Verify the fix in production', 'Wait for CI', 'Push to origin after review', 'Deploy to staging', 'Check that the build passes', 'Run the tests again', 'Test manually in the browser', 'Review the PR before merging', 'Report back to the user', 'Need to check whether the token expires', 'Ask the user which option']) expect(startsBanned(text)).toBe(true)
   })
   test('the same words later in the sentence, or other forms, are not caught', () => {
     expect(startsBanned('Corregir la verificación de la firma')).toBe(false)
@@ -42,6 +39,7 @@ describe('words and banned openings', () => {
     expect(startsBanned('Testing helpers duplicate the setup')).toBe(false)
     expect(startsBanned('Merge the two date helpers')).toBe(false)
     expect(startsBanned('Add a test for the parser')).toBe(false)
+    for (const text of ['Test the parser with empty input', 'Check for null before dereferencing user', 'Try/catch swallows errors', 'Report errors from the worker to the UI', 'Send retries with backoff', 'Push state down into the child component', 'Watch the file for changes instead of polling', 'Monitor memory use in the cache', 'Launch the worker lazily', 'Deploy script lacks a rollback', 'Run the migration script only once', 'Review the error handling in sync.mjs']) expect(startsBanned(text)).toBe(false)
     expect(startsBanned('')).toBe(false)
   })
 })
