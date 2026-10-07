@@ -3,12 +3,12 @@
   "owner": {
     "name": "Miguel Ángel Pérez García"
   },
-  "description": "Marketplace del mod loose-ends: el cuaderno de la sesión con Chispa para Claude Code.",
+  "description": "Marketplace for loose-ends, a Claude Code mod: the session's notebook, with Chispa.",
   "plugins": [
     {
       "name": "loose-ends",
       "source": "./loose-ends",
-      "description": "Propone los cabos sueltos que Claude deja sin hacer y tú decides cuáles se guardan, los guarda en refs/loose-ends sin ensuciar git, y Chispa avisa de lo que pide tu atención."
+      "description": "Proposes the loose ends Claude leaves undone and lets you decide which to keep; keeps them in refs/loose-ends without touching your branches, and Chispa flags what needs your attention. English and Spanish."
     }
   ]
 }

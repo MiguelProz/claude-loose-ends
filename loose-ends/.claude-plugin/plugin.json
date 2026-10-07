@@ -1,7 +1,7 @@
 {
   "name": "loose-ends",
-  "version": "0.4.8",
-  "description": "Propone los cabos sueltos que Claude deja sin hacer y tú decides cuáles se guardan, los guarda en refs/loose-ends sin ensuciar git, y Chispa avisa de lo que pide tu atención.",
+  "version": "0.5.0",
+  "description": "Proposes the loose ends Claude leaves undone and lets you decide which to keep; keeps them in refs/loose-ends without touching your branches, and Chispa flags what needs your attention. English and Spanish.",
   "author": { "name": "Miguel Ángel Pérez García" },
   "userConfig": {
     "language": {
