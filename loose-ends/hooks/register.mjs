@@ -7,7 +7,7 @@ import {
   markDone, nextItem, parseItems, propose, proposeClose, prune, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
   heldCandidates, release, unwithdraw, withdraw,
 } from '../lib/items.mjs'
-import { rejectReason } from '../lib/filter.mjs'
+import { rejectReason, rejectText } from '../lib/filter.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
 import {
   TOOL_NAME, doNowText, formatContext, noGitNote, notARepo, passingText, suggestPrefix, suggestText, sweepSystem, toolDescription, toolGuide, toolProposed, toolRejected,
@@ -517,10 +517,10 @@ async function offer($, input, target) {
   }, target, report)
   if (report.error) return { error: report.error }
   if (reason) {
-    await logDebug($, `loose-ends: candidato rechazado (${reason}): ${input.text}`)
+    await logDebug($, `loose-ends: candidato rechazado (${rejectText(lang, reason)}): ${input.text}`)
     return { reason }
   }
-  return res?.added ? { added: res.added } : { reason: 'texto demasiado corto' }
+  return res?.added ? { added: res.added } : { reason: 'tooShort' }
 }
 
 // The last commit of the session repo made since `since` (ISO), or null when there is none, no repo, or git fails.
@@ -952,7 +952,7 @@ export function register(on, options = {}) {
       return { result: toolUnreadable(lang, target, err?.message ?? String(err)) }
     }
     if (out.error) return { result: toolUnreadable(lang, target, out.error) }
-    if (out.reason) return { result: toolRejected(lang, out.reason) }
+    if (out.reason) return { result: toolRejected(lang, rejectText(lang, out.reason)) }
     return { result: toolProposed(lang, out.added) }
   })
 

@@ -147,4 +147,12 @@ export const en = {
   'sweepPrompt.repos': 'Candidate repos:',
   'sweepPrompt.commits': 'Commits of this turn:',
   'sweepPrompt.answer': "Assistant's answer:",
+  'reject.noCategory': 'no category (bug, debt, test, warning or improvement)',
+  'reject.notCode': 'not work on the code (checking, waiting, deciding, notifying, pushing or deploying)',
+  'reject.duplicate': 'already noted',
+  'reject.sameQuote': 'repeats the quote of another loose end',
+  'reject.sameFile': 'looks like another loose end in the same file',
+  'reject.similar': 'looks like another loose end',
+  'reject.likeRejected': 'looks like one you rejected',
+  'reject.tooShort': 'text too short',
 }

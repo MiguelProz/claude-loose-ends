@@ -157,3 +157,18 @@ test('English: the sweep is asked in English and its English categories are stor
   expect(asked).toContain("Assistant's answer:\n<<<\n")
   expect(w.saved().find((i: any) => i.text === 'Compress photo 3')).toMatchObject({ status: 'candidate', source: 'sweep', category: 'mejora' })
 })
+
+test('English: the filter says why in English, and catches English and Spanish openings alike', EN, async ($, on) => {
+  const w = world(on)
+  await w.start($)
+  const noCategory = await $.tool.call({ tool: TOOL, text: 'Fix the parser', priority: 'low' })
+  expect(noCategory.result).toBe('Not proposed: no category (bug, debt, test, warning or improvement).')
+  const waiting = await $.tool.call({ tool: TOOL, text: 'Wait for CI to finish', category: 'warning', priority: 'low' })
+  expect(waiting.result).toBe('Not proposed: not work on the code (checking, waiting, deciding, notifying, pushing or deploying).')
+  const spanish = await $.tool.call({ tool: TOOL, text: 'Comprobar el despliegue', category: 'warning', priority: 'low' })
+  expect(spanish.result).toBe('Not proposed: not work on the code (checking, waiting, deciding, notifying, pushing or deploying).')
+  await $.tool.call({ tool: TOOL, text: 'Fix the parser', category: 'bug', priority: 'low' })
+  const again = await $.tool.call({ tool: TOOL, text: 'fix the PARSER', category: 'bug', priority: 'low' })
+  expect(again.result).toBe('Not proposed: already noted.')
+  expect(w.saved()).toHaveLength(1)
+})

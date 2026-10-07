@@ -148,4 +148,12 @@ export const es = {
   'sweepPrompt.repos': 'Repos candidatos:',
   'sweepPrompt.commits': 'Commits de este turno:',
   'sweepPrompt.answer': 'Respuesta del asistente:',
+  'reject.noCategory': 'sin categoría (bug, deuda, test, aviso o mejora)',
+  'reject.notCode': 'no es trabajo sobre el código (comprobar, esperar, decidir, avisar, hacer push o desplegar)',
+  'reject.duplicate': 'ya está apuntado',
+  'reject.sameQuote': 'repite la cita de otro cabo',
+  'reject.sameFile': 'se parece a otro cabo del mismo fichero',
+  'reject.similar': 'se parece a otro cabo',
+  'reject.likeRejected': 'se parece a uno que rechazaste',
+  'reject.tooShort': 'texto demasiado corto',
 }

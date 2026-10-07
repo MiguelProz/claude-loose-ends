@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { BANNED_STARTS, rejectReason, similarity, startsBanned, words } from '../lib/filter.mjs'
+import { BANNED_STARTS, rejectReason, rejectText, similarity, startsBanned, words } from '../lib/filter.mjs'
 
 const T0 = '2026-10-04T10:00:00.000Z'
 const it = (id: string, text: string, over = {}) => ({ id, text, status: 'open', priority: 'medium', createdAt: T0, ...over })
@@ -9,8 +9,8 @@ describe('words and banned openings', () => {
   test('words drops case, accents and punctuation', () => {
     expect(words('¡Comprobár el CI, ya!')).toEqual(['comprobar', 'el', 'ci', 'ya'])
   })
-  test('every banned opening is caught, also after «hay que»', () => {
-    for (const start of BANNED_STARTS) expect(startsBanned(`${start[0].toUpperCase()}${start.slice(1)} lo del despliegue`)).toBe(true)
+  test('every Spanish banned opening is caught, also after «hay que»', () => {
+    for (const start of BANNED_STARTS.es) expect(startsBanned(`${start[0].toUpperCase()}${start.slice(1)} lo del despliegue`)).toBe(true)
     expect(startsBanned('Hay que verificar en producción la clave')).toBe(true)
     expect(startsBanned('hay que hacer push a main')).toBe(true)
     expect(startsBanned('Ejecutar npm run holidays:sync en producción')).toBe(true)
@@ -18,12 +18,30 @@ describe('words and banned openings', () => {
     expect(startsBanned('Probar en el navegador el panel')).toBe(true)
     expect(startsBanned('Fusionar y subir a main los commits de la rama')).toBe(true)
   })
+  test('every English banned opening is caught, also after need to, should or must', () => {
+    expect(BANNED_STARTS.en).toEqual([
+      'verify', 'check', 'confirm', 'review', 'test', 'try', 'run', 'execute', 'launch', 'wait', 'watch', 'monitor', 'decide', 'inform', 'report', 'ask', 'tell', 'notify',
+      'push', 'merge the branch', 'merge and push', 'merge into main', 'merge to main', 'deploy', 'send',
+    ])
+    for (const start of BANNED_STARTS.en) expect(startsBanned(`${start[0].toUpperCase()}${start.slice(1)} the deploy thing`)).toBe(true)
+    expect(startsBanned('We need to check the logs on staging')).toBe(true)
+    expect(startsBanned('Need to verify the migration')).toBe(true)
+    expect(startsBanned('We have to wait for CI')).toBe(true)
+    expect(startsBanned('Should deploy the worker again')).toBe(true)
+    expect(startsBanned('Must notify the team about the API change')).toBe(true)
+    expect(startsBanned('Run npm test in CI')).toBe(true)
+  })
   test('the same words later in the sentence, or other forms, are not caught', () => {
     expect(startsBanned('Corregir la verificación de la firma')).toBe(false)
     expect(startsBanned('Revisión pendiente del parser')).toBe(false)
     expect(startsBanned('Hacer pushes atómicos en la cola')).toBe(false)
     expect(startsBanned('Subir la cobertura del parser')).toBe(false)
     expect(startsBanned('Fusionar las dos funciones de fechas')).toBe(false)
+    expect(startsBanned('Fix the verification of the signature')).toBe(false)
+    expect(startsBanned('Reviewer avatars are missing in the list')).toBe(false)
+    expect(startsBanned('Testing helpers duplicate the setup')).toBe(false)
+    expect(startsBanned('Merge the two date helpers')).toBe(false)
+    expect(startsBanned('Add a test for the parser')).toBe(false)
     expect(startsBanned('')).toBe(false)
   })
 })
@@ -42,33 +60,61 @@ describe('rejectReason', () => {
     expect(rejectReason(cand(), [])).toBe(null)
   })
   test('no category, or an unknown one', () => {
-    expect(rejectReason(cand({ category: undefined }), [])).toContain('sin categoría')
-    expect(rejectReason(cand({ category: 'tarea' }), [])).toContain('sin categoría')
+    expect(rejectReason(cand({ category: undefined }), [])).toBe('noCategory')
+    expect(rejectReason(cand({ category: 'tarea' }), [])).toBe('noCategory')
   })
-  test('a banned opening', () => {
-    expect(rejectReason(cand({ text: 'Esperar a que termine el CI' }), [])).toContain('no es trabajo sobre el código')
+  test('a banned opening, in either language whatever the mod speaks', () => {
+    expect(rejectReason(cand({ text: 'Esperar a que termine el CI' }), [])).toBe('notCode')
+    expect(rejectReason(cand({ text: 'Wait for CI to finish' }), [])).toBe('notCode')
   })
   test('the same text as a candidate, open or doing item', () => {
-    for (const status of ['candidate', 'open', 'doing']) expect(rejectReason(cand(), [it('a', 'corregir el ENVÍO duplicado de correo', { status })])).toBe('ya está apuntado')
+    for (const status of ['candidate', 'open', 'doing']) expect(rejectReason(cand(), [it('a', 'corregir el ENVÍO duplicado de correo', { status })])).toBe('duplicate')
     expect(rejectReason(cand(), [it('a', 'Corregir el envío duplicado de correo', { status: 'done' })])).toBe(null)
   })
   test('the same quote as a live item', () => {
-    expect(rejectReason(cand({ evidence: 'lo dejo para otro día' }), [it('a', 'Otra cosa distinta', { evidence: 'Lo dejo para otro día.' })])).toBe('repite la cita de otro cabo')
+    expect(rejectReason(cand({ evidence: 'lo dejo para otro día' }), [it('a', 'Otra cosa distinta', { evidence: 'Lo dejo para otro día.' })])).toBe('sameQuote')
   })
   test('the same file and a similar text', () => {
     const items = [it('a', 'Corregir el envío duplicado del correo', { file: 'lib/facturas.ts' })]
-    expect(rejectReason(cand({ file: 'lib/facturas.ts' }), items)).toBe('se parece a otro cabo del mismo fichero')
+    expect(rejectReason(cand({ file: 'lib/facturas.ts' }), items)).toBe('sameFile')
     expect(rejectReason(cand({ file: 'lib/otro.ts' }), items)).toBe(null)
   })
   test('a sweep candidate similar to anything in the queue, whatever the file', () => {
     const items = [it('a', 'Corregir el envío duplicado del correo de facturas', { status: 'candidate', source: 'tool' })]
-    expect(rejectReason(cand({ source: 'sweep' }), items)).toBe('se parece a otro cabo')
+    expect(rejectReason(cand({ source: 'sweep' }), items)).toBe('similar')
     expect(rejectReason(cand({ source: 'tool' }), items)).toBe(null)
   })
   test('similar to one of the last 50 rejected', () => {
     const rejected = [it('r', 'Corregir el envío duplicado del correo', { status: 'rejected', closedAt: T0 })]
-    expect(rejectReason(cand(), rejected)).toBe('se parece a uno que rechazaste')
+    expect(rejectReason(cand(), rejected)).toBe('likeRejected')
     const old = Array.from({ length: 50 }, (_, k) => it(`n${k}`, `Rechazo distinto número ${k}`, { status: 'rejected', closedAt: '2026-10-04T12:00:00.000Z' }))
     expect(rejectReason(cand(), [...rejected, ...old])).toBe(null)
+  })
+})
+
+describe('rejectText', () => {
+  test('every reason in Spanish, as 0.4 said it', () => {
+    expect(['noCategory', 'notCode', 'duplicate', 'sameQuote', 'sameFile', 'similar', 'likeRejected', 'tooShort'].map(code => rejectText('es', code))).toEqual([
+      'sin categoría (bug, deuda, test, aviso o mejora)',
+      'no es trabajo sobre el código (comprobar, esperar, decidir, avisar, hacer push o desplegar)',
+      'ya está apuntado',
+      'repite la cita de otro cabo',
+      'se parece a otro cabo del mismo fichero',
+      'se parece a otro cabo',
+      'se parece a uno que rechazaste',
+      'texto demasiado corto',
+    ])
+  })
+  test('every reason in English', () => {
+    expect(['noCategory', 'notCode', 'duplicate', 'sameQuote', 'sameFile', 'similar', 'likeRejected', 'tooShort'].map(code => rejectText('en', code))).toEqual([
+      'no category (bug, debt, test, warning or improvement)',
+      'not work on the code (checking, waiting, deciding, notifying, pushing or deploying)',
+      'already noted',
+      'repeats the quote of another loose end',
+      'looks like another loose end in the same file',
+      'looks like another loose end',
+      'looks like one you rejected',
+      'text too short',
+    ])
   })
 })

@@ -1,11 +1,22 @@
 import { CATEGORIES, normalize } from './items.mjs'
+import { t } from './i18n.mjs'
 
-// Openings of what is not a loose end: checking, trying, running, waiting, deciding, reporting, pushing, merging,
-// deploying and sending to third parties.
-export const BANNED_STARTS = [
-  'verificar', 'comprobar', 'confirmar', 'revisar', 'probar', 'ejecutar', 'lanzar', 'esperar', 'vigilar', 'decidir', 'informar', 'reportar', 'preguntar', 'avisar',
-  'hacer push', 'subir la rama', 'subir los cambios', 'subir a main', 'hacer merge', 'mergear', 'fusionar y subir', 'fusionar la rama', 'desplegar', 'enviar',
-]
+// Openings of what is not a loose end, per language: checking, trying, running, waiting, deciding, reporting, pushing,
+// merging, deploying and sending to third parties. Both lists always apply, because Claude may answer in a language
+// other than the mod's. English "merge" alone is a refactor as often as a git merge, so only its git forms are here.
+export const BANNED_STARTS = {
+  es: [
+    'verificar', 'comprobar', 'confirmar', 'revisar', 'probar', 'ejecutar', 'lanzar', 'esperar', 'vigilar', 'decidir', 'informar', 'reportar', 'preguntar', 'avisar',
+    'hacer push', 'subir la rama', 'subir los cambios', 'subir a main', 'hacer merge', 'mergear', 'fusionar y subir', 'fusionar la rama', 'desplegar', 'enviar',
+  ],
+  en: [
+    'verify', 'check', 'confirm', 'review', 'test', 'try', 'run', 'execute', 'launch', 'wait', 'watch', 'monitor', 'decide', 'inform', 'report', 'ask', 'tell', 'notify',
+    'push', 'merge the branch', 'merge and push', 'merge into main', 'merge to main', 'deploy', 'send',
+  ],
+}
+const ALL_BANNED = [...BANNED_STARTS.es, ...BANNED_STARTS.en].map(start => start.split(' '))
+// What may come before the banned verb («hay que verificar…», "we need to check…"); the longer ones first.
+const LEAD_INS = [['hay', 'que'], ['we', 'need', 'to'], ['need', 'to'], ['we', 'have', 'to'], ['have', 'to'], ['we', 'should'], ['should'], ['must']]
 export const SIMILARITY = 0.6
 // The sweep repeats what Claude already noted in other words: its candidates are compared with the whole queue.
 export const SWEEP_SIMILARITY = 0.5
@@ -23,11 +34,12 @@ export function words(text) {
     .filter(Boolean)
 }
 
-// Whether the text opens with a banned verb, or with «hay que» and one.
+// Whether the text opens with a banned verb of either language, or with a lead-in and one.
 export function startsBanned(text) {
   const all = words(text)
-  const rest = all[0] === 'hay' && all[1] === 'que' ? all.slice(2) : all
-  return BANNED_STARTS.some(start => start.split(' ').every((word, k) => rest[k] === word))
+  const lead = LEAD_INS.find(start => start.every((word, k) => all[k] === word))
+  const rest = lead ? all.slice(lead.length) : all
+  return ALL_BANNED.some(start => start.every((word, k) => rest[k] === word))
 }
 
 // Jaccard of the two word sets: shared words over all distinct words.
@@ -42,23 +54,26 @@ export function similarity(a, b) {
 
 const msOf = iso => Date.parse(iso) || 0
 
-// Why a candidate must not reach the person, or null when it may.
+// Why a candidate must not reach the person, as a code for rejectText, or null when it may.
 export function rejectReason(candidate, items) {
-  if (!CATEGORIES.includes(candidate.category)) return 'sin categoría (bug, deuda, test, aviso o mejora)'
-  if (startsBanned(candidate.text)) return 'no es trabajo sobre el código (comprobar, esperar, decidir, avisar, hacer push o desplegar)'
+  if (!CATEGORIES.includes(candidate.category)) return 'noCategory'
+  if (startsBanned(candidate.text)) return 'notCode'
   const pool = items.filter(i => POOL.has(i.status))
   const key = normalize(candidate.text)
-  if (pool.some(i => normalize(i.text) === key)) return 'ya está apuntado'
+  if (pool.some(i => normalize(i.text) === key)) return 'duplicate'
   if (candidate.evidence) {
     const quote = normalize(candidate.evidence)
-    if (pool.some(i => i.evidence && normalize(i.evidence) === quote)) return 'repite la cita de otro cabo'
+    if (pool.some(i => i.evidence && normalize(i.evidence) === quote)) return 'sameQuote'
   }
-  if (candidate.file && pool.some(i => i.file === candidate.file && similarity(i.text, candidate.text) >= SIMILARITY)) return 'se parece a otro cabo del mismo fichero'
-  if (candidate.source === 'sweep' && pool.some(i => similarity(i.text, candidate.text) >= SWEEP_SIMILARITY)) return 'se parece a otro cabo'
+  if (candidate.file && pool.some(i => i.file === candidate.file && similarity(i.text, candidate.text) >= SIMILARITY)) return 'sameFile'
+  if (candidate.source === 'sweep' && pool.some(i => similarity(i.text, candidate.text) >= SWEEP_SIMILARITY)) return 'similar'
   const rejected = items
     .filter(i => i.status === 'rejected')
     .sort((a, b) => msOf(b.closedAt) - msOf(a.closedAt))
     .slice(0, REJECTED_WINDOW)
-  if (rejected.some(i => similarity(i.text, candidate.text) >= SIMILARITY)) return 'se parece a uno que rechazaste'
+  if (rejected.some(i => similarity(i.text, candidate.text) >= SIMILARITY)) return 'likeRejected'
   return null
 }
+
+// A reason code in words of `lang`.
+export const rejectText = (lang, code) => t(lang, `reject.${code}`)
