@@ -1,4 +1,5 @@
-import { CATEGORIES, PRIORITIES } from './items.mjs'
+import { CATEGORIES, PRIORITIES, canonicalCategory } from './items.mjs'
+import { t } from './i18n.mjs'
 import { formatCandidates } from './repos.mjs'
 
 export const SWEEP_MODEL = 'claude-haiku-4-5-20251001'
@@ -17,13 +18,13 @@ function fenceSafe(text) {
 
 // What Haiku reads: the live items it may close (with ids), what waits for the person and what the person
 // rejected (so it proposes neither again), the candidate repos when another repo was touched, and the fenced answer.
-export function buildSweepPrompt(answer, liveItems, waiting = [], candidates = [], rejected = [], log = '') {
-  const list = liveItems.length ? liveItems.map(i => `- ${i.id}: ${i.text}`).join('\n') : '(ninguno)'
-  const queue = waiting.length ? `Por revisar (no los repitas; si la respuesta los deja hechos, van en "resolved"):\n${waiting.map(i => `- ${i.id}: ${i.text}`).join('\n')}\n\n` : ''
-  const no = rejected.length ? `Ejemplos que el usuario rechazó (no propongas nada parecido):\n${rejected.map(t => `- ${t}`).join('\n')}\n\n` : ''
-  const repos = candidates.length ? `Repos candidatos:\n${formatCandidates(candidates)}\n\n` : ''
-  const commits = log.trim() ? `Commits de este turno:\n${log.trim().split('\n').map(l => `- ${fenceSafe(l)}`).join('\n')}\n\n` : ''
-  return `Cabos abiertos:\n${list}\n\n${queue}${no}${repos}${commits}Respuesta del asistente:\n<<<\n${fenceSafe(answer.slice(0, 12000))}\n>>>`
+export function buildSweepPrompt(lang, answer, liveItems, waiting = [], candidates = [], rejected = [], log = '') {
+  const list = liveItems.length ? liveItems.map(i => `- ${i.id}: ${i.text}`).join('\n') : t(lang, 'sweepPrompt.none')
+  const queue = waiting.length ? `${t(lang, 'sweepPrompt.waiting')}\n${waiting.map(i => `- ${i.id}: ${i.text}`).join('\n')}\n\n` : ''
+  const no = rejected.length ? `${t(lang, 'sweepPrompt.rejected')}\n${rejected.map(x => `- ${x}`).join('\n')}\n\n` : ''
+  const repos = candidates.length ? `${t(lang, 'sweepPrompt.repos')}\n${formatCandidates(candidates)}\n\n` : ''
+  const commits = log.trim() ? `${t(lang, 'sweepPrompt.commits')}\n${log.trim().split('\n').map(l => `- ${fenceSafe(l)}`).join('\n')}\n\n` : ''
+  return `${t(lang, 'sweepPrompt.open')}\n${list}\n\n${queue}${no}${repos}${commits}${t(lang, 'sweepPrompt.answer')}\n<<<\n${fenceSafe(answer.slice(0, 12000))}\n>>>`
 }
 
 // Index one past the "}" that closes the object opening at `start`, or -1. Braces inside JSON strings do not count.
@@ -188,7 +189,7 @@ export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '',
     })
   const fresh = quoted.slice(0, MAX_NEW).map(x => ({
     text: x.text.trim().slice(0, 300),
-    category: CATEGORIES.includes(x.category) ? x.category : undefined,
+    category: CATEGORIES.includes(canonicalCategory(x.category)) ? canonicalCategory(x.category) : undefined,
     priority: sweepPriority(PRIORITIES.includes(x.priority) ? x.priority : 'medium', x.sentence),
     evidence: cleanEvidence(x.evidence).slice(0, 400),
     repo: typeof x.repo === 'string' && repos.has(x.repo) ? x.repo : undefined,

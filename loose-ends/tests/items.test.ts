@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
-  CATEGORIES, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live, nextItem,
+  CATEGORIES, CATEGORY_ALIASES, canonicalCategory, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live, nextItem,
   markDone, parseItems, propose, proposeClose, withdraw, unwithdraw, isWithdrawn, heldCandidates, release, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, upgrade, snapshot, recap, prune, CLOSED_RETENTION_MS, REJECTED_KEEP,
 } from '../lib/items.mjs'
 
@@ -256,5 +256,16 @@ describe('prune', () => {
   test('the same array comes back when nothing goes', () => {
     const items = [mk('open', 'open'), mk('done', 'done', '2026-10-03T00:00:00.000Z')]
     expect(prune(items, NOW)).toBe(items)
+  })
+})
+
+describe('category aliases', () => {
+  test('English names and any case give the stored key; anything else stays as given', () => {
+    expect(CATEGORY_ALIASES).toEqual({ debt: 'deuda', warning: 'aviso', improvement: 'mejora' })
+    expect(['bug', 'deuda', 'test', 'aviso', 'mejora'].map(canonicalCategory)).toEqual(['bug', 'deuda', 'test', 'aviso', 'mejora'])
+    expect(['debt', 'Warning', ' improvement ', 'BUG'].map(canonicalCategory)).toEqual(['deuda', 'aviso', 'mejora', 'bug'])
+    expect(canonicalCategory('tarea')).toBe('tarea')
+    expect(canonicalCategory(undefined)).toBeUndefined()
+    expect(canonicalCategory(3 as any)).toBeUndefined()
   })
 })

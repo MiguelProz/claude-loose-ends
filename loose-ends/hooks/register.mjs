@@ -3,15 +3,15 @@ import {
   blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, turnLogArgs, mergeItems, pushArgs, sameItems, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
 } from '../lib/refstore.mjs'
 import {
-  LEGACY_FILE, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
+  LEGACY_FILE, canonicalCategory, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
   markDone, nextItem, parseItems, propose, proposeClose, prune, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
   heldCandidates, release, unwithdraw, withdraw,
 } from '../lib/items.mjs'
 import { rejectReason } from '../lib/filter.mjs'
 import { SWEEP_MODEL, buildSweepPrompt, containsQuote, parseSweepReply, shouldSweep } from '../lib/detect.mjs'
 import {
-  NOT_A_REPO, NO_GIT_NOTE, SWEEP_SYSTEM, TOOL_DESCRIPTION, TOOL_GUIDE, TOOL_NAME, TOOL_SCHEMA, TOOL_TOO_SHORT,
-  SUGGEST_PREFIX, doNowText, formatContext, passingText, suggestText, toolProposed, toolRejected, toolUnreadable,
+  TOOL_NAME, doNowText, formatContext, noGitNote, notARepo, passingText, suggestPrefix, suggestText, sweepSystem, toolDescription, toolGuide, toolProposed, toolRejected,
+  toolSchema, toolTooShort, toolUnreadable,
 } from '../lib/texts.mjs'
 import { FLASH_MS, bashFailed, chispaMood, isCommit, isPush } from '../lib/mood.mjs'
 import { FILE_TOOLS, candidatePaths, candidateRepos, isAbsolutePath, isIgnoredRepo, normalizePath, parentPath, relativeTo, repoName } from '../lib/repos.mjs'
@@ -499,7 +499,7 @@ function passingFor(e) {
   if (!rel || passed.has(rel)) return null
   const here = live(items).filter(i => i.file === rel)
   if (!here.length) return null
-  return { rel, text: passingText(here) }
+  return { rel, text: passingText(lang, here) }
 }
 
 // Runs the filter and files a candidate in `target`. `reason` says why the filter refused it, `error` why the
@@ -587,8 +587,8 @@ async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, res
   const waiting = [...candidates(items), ...heldCandidates(items)]
   const r = await $.model.complete({
     model: SWEEP_MODEL,
-    system: SWEEP_SYSTEM,
-    prompt: buildSweepPrompt(answer, open, waiting, repos, rejectedTexts(items), log),
+    system: sweepSystem(lang),
+    prompt: buildSweepPrompt(lang, answer, open, waiting, repos, rejectedTexts(items), log),
     maxTokens: 800,
     timeoutMs: 20000,
   })
@@ -762,14 +762,14 @@ async function doNow($, id) {
   if (res === null) return
   // a card's Deshacer would put back the item as it was before Hacer
   triage.delete(id)
-  await $.prompt.submit({ text: doNowText(item) })
+  await $.prompt.submit({ text: doNowText(lang, item) })
 }
 
 // The urgent item as the prompt's suggestion, sent once the turn has ended: while a turn runs the box shows none.
 async function suggestUrgent($) {
   const item = suggestable(items)
   if (!item || working) return
-  const r = await $.prompt.suggest({ text: suggestText(item) })
+  const r = await $.prompt.suggest({ text: suggestText(lang, item) })
   if (!r?.isShown) await logDebug($, 'loose-ends: la sugerencia del cabo urgente no se mostró')
 }
 
@@ -831,7 +831,7 @@ export function register(on, options = {}) {
     runningAgents.clear()
     notedThisTurn = false
     lastActivity = await $.clock.now()
-    await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA })
+    await $.tool.register({ name: TOOL_NAME, description: toolDescription(lang), inputSchema: toolSchema(lang) })
     await $.command.register({ name: 'pendientes', description: 'Abre el cuaderno: cabos por revisar, abiertos y cerrados', immediate: true })
     touched = new Set()
     sessionRepo = null
@@ -884,8 +884,9 @@ export function register(on, options = {}) {
     touched = new Set()
     if (!e.agentId) {
       passed.clear()
-      if (typeof e.text === 'string' && e.text.startsWith(SUGGEST_PREFIX)) {
-        const wanted = e.text.slice(SUGGEST_PREFIX.length).trim()
+      const prefix = suggestPrefix(lang)
+      if (typeof e.text === 'string' && e.text.startsWith(prefix)) {
+        const wanted = e.text.slice(prefix.length).trim()
         const item = live(items).find(i => i.text === wanted)
         if (item) background($, act($, item.id, start), 'empezar el cabo sugerido')
       }
@@ -938,41 +939,41 @@ export function register(on, options = {}) {
   on('tool.call', { tool: 'mcp__loose-ends__note_loose_end' }, async ($, e) => {
     await resolveLanguage($)
     notedThisTurn = true
-    if (String(e.text ?? '').trim().length < 3) return { result: TOOL_TOO_SHORT }
+    if (String(e.text ?? '').trim().length < 3) return { result: toolTooShort(lang) }
     let target = sessionRepo
     if (typeof e.repo === 'string' && e.repo.trim()) {
       target = await repoOf($, e.repo.trim(), { fresh: true })
-      if (!target) return { result: NOT_A_REPO }
-    } else if (!target) return { result: NO_GIT_NOTE }
+      if (!target) return { result: notARepo(lang) }
+    } else if (!target) return { result: noGitNote(lang) }
     let out
     try {
-      out = await offer($, { text: e.text, category: e.category, priority: e.priority, evidence: e.evidence, file: relativeTo(target, e.file), source: 'tool' }, target)
+      out = await offer($, { text: e.text, category: canonicalCategory(e.category), priority: e.priority, evidence: e.evidence, file: relativeTo(target, e.file), source: 'tool' }, target)
     } catch (err) {
-      return { result: toolUnreadable(target, err?.message ?? String(err)) }
+      return { result: toolUnreadable(lang, target, err?.message ?? String(err)) }
     }
-    if (out.error) return { result: toolUnreadable(target, out.error) }
-    if (out.reason) return { result: toolRejected(out.reason) }
-    return { result: toolProposed(out.added) }
+    if (out.error) return { result: toolUnreadable(lang, target, out.error) }
+    if (out.reason) return { result: toolRejected(lang, out.reason) }
+    return { result: toolProposed(lang, out.added) }
   })
 
   on('prompt.suggest', async ($, e, next) => {
     await resolveLanguage($)
     if (e.origin?.kind !== 'suggestion') return next(e)
     const item = suggestable(items)
-    return item ? next({ ...e, text: suggestText(item) }) : next(e)
+    return item ? next({ ...e, text: suggestText(lang, item) }) : next(e)
   })
 
   on('prompt.compose', async ($, e, next) => {
     await resolveLanguage($)
     const r = await next(e)
-    return { sections: [...r.sections, { id: 'loose-ends:guide', text: TOOL_GUIDE, scope: 'session' }] }
+    return { sections: [...r.sections, { id: 'loose-ends:guide', text: toolGuide(lang), scope: 'session' }] }
   })
 
   on('prompt.context', async ($, e, next) => {
     await resolveLanguage($)
     const r = await next(e)
     await load($)
-    const text = formatContext(live(items))
+    const text = formatContext(lang, live(items))
     return text ? { ...r, blocks: [...r.blocks, { name: 'looseEnds', text }] } : r
   })
 

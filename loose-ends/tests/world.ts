@@ -60,6 +60,7 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   // the environment each fetch and push ran with
   const netEnvs: any[] = []
   const commands: any[] = []
+  const tools: any[] = []
   const state = { invalidations: 0 }
   const fs: Record<string, string> = { ...files }
   const clock = mock.clock(on, { now: Date.parse('2026-10-04T10:00:00.000Z') })
@@ -206,7 +207,7 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
         return result(0, opts.log ?? '')
     }
   })
-  on('tool.register', ($: any, e: any) => ({ value: { tool: `mcp__loose-ends__${e.name}` } }))
+  on('tool.register', ($: any, e: any) => { tools.push(e); return { value: { tool: `mcp__loose-ends__${e.name}` } } })
   on('command.register', ($: any, e: any) => { commands.push(e); return { value: { command: e.name } } })
   on('ui.invalidate', () => { state.invalidations++; return { value: undefined } })
   on('ui.toast', ($: any, e: any) => { toasts.push(e.text); return { value: undefined } })
@@ -228,5 +229,5 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   const remoteSha = (top: string) => remotes[top]
   const setBranch = (b: string) => { branch = b }
   const setRoot = (r: string) => { root = r }
-  return { fs, clock, start, saved, savedAt, refText, setRef, race, remoteRace, remoteText, setRemote, refSha, remoteSha, setBranch, setRoot, flags, runs, logs, toasts, writes, gitReads, reads, pushes, fetches, envs, netEnvs, config, commands, state }
+  return { fs, clock, start, saved, savedAt, refText, setRef, race, remoteRace, remoteText, setRemote, refSha, remoteSha, setBranch, setRoot, flags, runs, logs, toasts, writes, gitReads, reads, pushes, fetches, envs, netEnvs, config, commands, tools, state }
 }

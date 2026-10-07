@@ -2,6 +2,18 @@
 // Transitions take `now` as an ISO string; queries take it in milliseconds.
 export const PRIORITIES = ['high', 'medium', 'low']
 export const CATEGORIES = ['bug', 'deuda', 'test', 'aviso', 'mejora']
+
+// English category names the tool and the sweep accept; they are stored under the keys above.
+export const CATEGORY_ALIASES = { debt: 'deuda', warning: 'aviso', improvement: 'mejora' }
+
+// The stored key for a category as Claude or the sweep wrote it; a value it does not know is returned as given, so
+// the filter refuses it.
+export function canonicalCategory(value) {
+  if (typeof value !== 'string') return undefined
+  const key = value.trim().toLowerCase()
+  if (CATEGORIES.includes(key)) return key
+  return Object.hasOwn(CATEGORY_ALIASES, key) ? CATEGORY_ALIASES[key] : value
+}
 const DAY = 24 * 60 * 60 * 1000
 export const CANDIDATE_TTL_MS = 7 * DAY
 export const STALE_MS = 14 * DAY
