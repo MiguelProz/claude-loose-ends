@@ -315,6 +315,19 @@
       "updatedAt": "2026-10-07T19:49:49.280Z",
       "status": "rejected",
       "closedAt": "2026-10-07T19:49:49.280Z"
+    },
+    {
+      "id": "178773a4",
+      "text": "Añadir capturas limpias de la barra y del Cuaderno (sin barra lateral) al README",
+      "category": "deuda",
+      "priority": "medium",
+      "source": "sweep",
+      "evidence": "Capturas limpias para el README: de la barra y del Cuaderno, sin la barra lateral con tus otros proyectos. Cuando las tengas, las añado.",
+      "held": true,
+      "branch": "master",
+      "createdAt": "2026-10-07T21:30:38.311Z",
+      "updatedAt": "2026-10-07T21:30:38.311Z",
+      "status": "candidate"
     }
   ]
 }
