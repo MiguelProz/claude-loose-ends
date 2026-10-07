@@ -7,10 +7,11 @@ const TABLES = { es, en }
 const PRIORITY_NAMES = ['high', 'medium', 'low']
 
 // The language from the `language` option: 'es' or 'en' as given; anything else is auto, where the first of
-// LC_ALL, LC_MESSAGES and LANG with a value decides (Spanish when it starts with "es"); none set is English.
+// LC_ALL, LC_MESSAGES and LANG with a value decides, then APPLE_LOCALE (the macOS system language, which desktop
+// apps often get instead of those variables); Spanish when it starts with "es"; none set is English.
 export function pickLanguage(option, env = {}) {
   if (option === 'es' || option === 'en') return option
-  const value = [env.LC_ALL, env.LC_MESSAGES, env.LANG].find(v => typeof v === 'string' && v.trim() !== '')
+  const value = [env.LC_ALL, env.LC_MESSAGES, env.LANG, env.APPLE_LOCALE].find(v => typeof v === 'string' && v.trim() !== '')
   return value && value.trim().toLowerCase().startsWith('es') ? 'es' : 'en'
 }
 

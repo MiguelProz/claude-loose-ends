@@ -76,13 +76,17 @@ the marketplace fresh by itself.
 English and Spanish. The `language` option takes `auto` (the default), `es`
 or `en`; change it in `/config` (loose-ends → Language) and the mod reloads in
 the new language. With `auto`, the first of `LC_ALL`, `LC_MESSAGES` and `LANG`
-that is set decides: Spanish when it starts with `es`, English otherwise. The
+that is set decides and, on macOS, where none is (as in most desktop apps) the
+system language does: Spanish when it starts with `es`, English otherwise. Set
+the option to `es` or `en` to force a language. The
 stored loose ends are the same in both languages.
 
 ## Privacy
 
 - Loose ends are written to `refs/loose-ends/items` in the repo they belong
-  to, and nowhere else on your machine. Outside a git repo nothing is stored.
+  to, plus a small `loose-ends-seen.json` in that repo's git directory (what the
+  last session saw, to tell what changed). Nothing else is stored on your machine.
+  Outside a git repo nothing is stored.
 - If the repo has an `origin` and you allow it, that ref is pushed there. It
   does not show on GitHub's web pages, but anyone who can fetch the repo can
   read it.

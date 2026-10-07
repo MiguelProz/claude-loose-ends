@@ -67,6 +67,34 @@ test('auto with no locale variable set is English', async ($, on) => {
   await desk.unmount()
 })
 
+test('auto with no locale variable on a Spanish Mac is Spanish, from the system language', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: withCandidate() }, env: {}, appleLocale: 'es_ES' })
+  await w.start($)
+  const desk = await band($)
+  expect(await desk.find({ type: 'Text', text: '1 cabo espera tu visto bueno' })).toBeDefined()
+  expect(w.runs.some(r => r.join(' ') === 'defaults read -g AppleLocale')).toBe(true)
+  expect(w.logs).toContain('loose-ends: language es (from AppleLocale)')
+  expect(w.commands.some(c => c.name === 'pendientes')).toBe(true)
+  await desk.unmount()
+})
+
+test('auto with no locale variable and a failing defaults is English', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: withCandidate() }, env: {} })
+  await w.start($)
+  const desk = await band($)
+  expect(await desk.find({ type: 'Text', text: '1 loose end awaits your OK' })).toBeDefined()
+  expect(w.logs).toContain('loose-ends: language en (default)')
+  await desk.unmount()
+})
+
+test('auto with LANG set never runs defaults', async ($, on) => {
+  const w = world(on, {}, { refs: { [ROOT]: withCandidate() }, env: { LANG: 'es_ES.UTF-8' }, appleLocale: 'en_US' })
+  await w.start($)
+  await band($).then(d => d.unmount())
+  expect(w.runs.some(r => r[0] === 'defaults')).toBe(false)
+  expect(w.logs).toContain('loose-ends: language es (from LANG)')
+})
+
 test('auto: LC_ALL wins over LANG', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: withCandidate() }, env: { LC_ALL: 'es_ES.UTF-8', LANG: 'en_US.UTF-8' } })
   await w.start($)

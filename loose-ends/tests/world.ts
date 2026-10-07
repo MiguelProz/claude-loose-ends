@@ -28,6 +28,8 @@ type Opts = {
   // LC_ALL, LC_MESSAGES and LANG; left out, LANG=es_ES.UTF-8, so `auto` picks the Spanish the older tests were
   // written in. `{}` means none is set.
   env?: Record<string, string>
+  // what `defaults read -g AppleLocale` prints (macOS system language); unset: the command fails
+  appleLocale?: string
   // git toplevel -> the blob text its data ref holds
   refs?: Record<string, string>
   // git toplevel -> origin's data ref blob text ('' for an origin without the ref); toplevels not listed have no origin
@@ -111,6 +113,9 @@ export function world(on: any, files: Record<string, string> = {}, opts: Opts = 
   on('fs.write', ($: any, e: any) => { if (flags.failWrites) throw new Error('disco lleno'); fs[fsKey(e.path)] = e.text; return { value: undefined } })
   on('process.run', ($: any, e: any) => {
     runs.push(e.argv)
+    if (e.argv[0] === 'defaults') {
+      return { value: { exitCode: opts.appleLocale === undefined ? 1 : 0, stdout: opts.appleLocale === undefined ? '' : `${opts.appleLocale}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
     if (flags.throwGit) throw new Error('git no arranca')
     const result = (exitCode: number, stdout: string | undefined) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
     if (flags.failGit) return result(0, undefined)

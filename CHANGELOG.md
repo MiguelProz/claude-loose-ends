@@ -5,8 +5,11 @@
 - English and Spanish. The `language` option (`auto`, `es`, `en`; `auto` by
   default) sets the language of the band, the Notebook, the cards under
   messages, the toasts and everything sent to Claude. `auto` follows `LC_ALL`,
-  `LC_MESSAGES` and `LANG`: Spanish when the first one set starts with `es`,
+  `LC_MESSAGES` and `LANG` (and, on macOS, the system language when none is
+  set, as in desktop apps): Spanish when the first one set starts with `es`,
   English otherwise.
+- The sweep's checks for sentences already done, under way, left to you or put
+  off now work in English as well as Spanish.
 - The `note_loose_end` tool and the sweep accept English category names
   (`debt`, `warning`, `improvement`) and store them under the existing keys.
 - The filter knows English openings that are not work on the code and applies

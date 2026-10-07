@@ -608,7 +608,7 @@ test('a failing write from a pane button is logged, not thrown', async ($, on) =
   w.flags.failWrites = true
   await ui.press({ key: 'done-a1' })
   await w.clock.settle()
-  expect(w.logs).toEqual([expect.stringContaining('failed')])
+  expect(w.logs.filter(l => !l.startsWith('loose-ends: language '))).toEqual([expect.stringContaining('failed')])
   await ui.unmount()
 })
 

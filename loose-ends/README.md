@@ -78,8 +78,9 @@ Requires Claude Code 2.1.287 or later (tested with 2.1.288).
 ## Language
 
 The `language` option: `auto` (default), `es` or `en`, in `/config`. With
-`auto`, the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that is set decides:
-Spanish when it starts with `es`, English otherwise. The tool accepts the
+`auto`, the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that is set decides
+and, on macOS, where none is, the system language does: Spanish when it starts
+with `es`, English otherwise. `es` or `en` force a language. The tool accepts the
 categories in both languages (`debt`, `warning`, `improvement` are stored as
 `deuda`, `aviso`, `mejora`), so loose ends written in one language read the
 same in the other. The debug log is always in English.

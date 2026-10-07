@@ -15,6 +15,18 @@ describe('pickLanguage', () => {
     expect(pickLanguage('auto', { LC_ALL: '  ', LANG: 'es' })).toBe('es')
     expect(pickLanguage('auto', { LANG: 'ES_es' })).toBe('es')
     expect(pickLanguage('auto', { LANG: 'C.UTF-8' })).toBe('en')
+    expect(pickLanguage('auto', { LANG: 'C' })).toBe('en')
+    expect(pickLanguage('auto', { LANG: 'POSIX' })).toBe('en')
+    expect(pickLanguage('auto', { LANG: 'en_GB' })).toBe('en')
+    expect(pickLanguage('auto', { LANG: 'es_MX.UTF-8' })).toBe('es')
+  })
+  test('auto: the macOS system language is the last fallback', () => {
+    expect(pickLanguage('auto', { APPLE_LOCALE: 'es_ES' })).toBe('es')
+    expect(pickLanguage('auto', { APPLE_LOCALE: 'en_US' })).toBe('en')
+    expect(pickLanguage('auto', { LANG: 'en_US.UTF-8', APPLE_LOCALE: 'es_ES' })).toBe('en')
+    expect(pickLanguage('auto', { LC_ALL: '', LANG: ' ', APPLE_LOCALE: 'es_ES' })).toBe('es')
+    expect(pickLanguage('auto', { APPLE_LOCALE: '' })).toBe('en')
+    expect(pickLanguage('es', { APPLE_LOCALE: 'en_US' })).toBe('es')
   })
   test('auto with nothing set is English; an unknown option counts as auto', () => {
     expect(pickLanguage('auto', {})).toBe('en')

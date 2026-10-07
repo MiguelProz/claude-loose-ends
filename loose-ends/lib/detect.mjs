@@ -122,18 +122,18 @@ export function sentenceAround(answer, quote) {
 }
 
 // Words without accents, so the markers below match «está» and «esta» alike.
-const plain = text => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+const plain = text => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 // Done in the same sentence («… Corregido.»), unless a negation sits right before it («todavía no está resuelto»). A bare
 // «ya está» counts only where the sentence ends: «ya está editado, sin tests» is half done.
-const DONE = /\b(corregid[oa]s?|arreglad[oa]s?|resuelt[oa]s?|solucionad[oa]s?|ya esta (hecho|arreglado|corregido|resuelto|listo)|ya esta(?=[.!;]|$))/
-const NEGATED = /\b(no|sin|nunca|todavia no|aun no)\s+(esta\s+|estan\s+|queda\s+|quedan\s+)?$/
+const DONE = /\b(corregid[oa]s?|arreglad[oa]s?|resuelt[oa]s?|solucionad[oa]s?|ya esta (hecho|arreglado|corregido|resuelto|listo)|ya esta(?=[.!;]|$)|fixed|done|resolved|implemented|added|removed|handled)/
+const NEGATED = /\b(no|sin|nunca|todavia no|aun no)\s+(esta\s+|estan\s+|queda\s+|quedan\s+)?$|\b(not|never|yet|still|to be|be|isn['’]t|aren['’]t|wasn['’]t|weren['’]t|hasn['’]t|haven['’]t)\s+(yet\s+|been\s+)?$/
 // Work under way or planned in this session: agents running, the next batch, «lo arreglo», «cuando terminen».
-const UNDER_WAY = /\b(he lanzado|lanzo (un|dos|tres|los|el|varios)|estoy lanzando|lo estan arreglando|va en la tanda|van en la tanda|en la (siguiente|proxima) tanda|(lo|la|los|las) (arreglo|corrijo|cambio|extraigo|hago) (ahora|con|en|al|despues)|se extraera|lo revisare|cuando terminen|cuando acaben|cuando termine el agente|en el siguiente paso|a continuacion (lo|la|los|las))/
+const UNDER_WAY = /\b(he lanzado|lanzo (un|dos|tres|los|el|varios)|estoy lanzando|lo estan arreglando|va en la tanda|van en la tanda|en la (siguiente|proxima) tanda|(lo|la|los|las) (arreglo|corrijo|cambio|extraigo|hago) (ahora|con|en|al|despues)|se extraera|lo revisare|cuando terminen|cuando acaben|cuando termine el agente|en el siguiente paso|a continuacion (lo|la|los|las)|i['’]?m (now )?(fixing|adding|launching|working on|handling|doing)|i am (now )?(fixing|adding|launching|working on|handling|doing)|in progress|working on it|(i['’]?ll|i will) (fix|handle|do|add) (it|this|that|them) (now|next|after|in|with)|(launched|launching) (a|an|two|three|the|several) agents?|(when|once) the agents? (finish|are done|have finished))/
 // A choice left to the person.
-const DECISION = /\b(es decision tuya|decision tuya|decides tu|te lo pregunto|decidir si)\b/
+const DECISION = /\b(es decision tuya|decision tuya|decides tu|te lo pregunto|decidir si|your call|up to you|you decide|you choose|your decision|let me know if you want)\b/
 
 // Put off on purpose: later, another phase, outside the plan.
-const DEFERRED = /\b(mas adelante|para luego|otro momento|otro dia|en el futuro|fase \d+|fuera del plan|fuera de alcance|fuera del alcance)\b/
+const DEFERRED = /\b(mas adelante|para luego|otro momento|otro dia|en el futuro|fase \d+|fuera del plan|fuera de alcance|fuera del alcance|for later|later on|out of scope|not now|separately|in (a|another|the next) (pr|task|session|phase|pull request)|follow-?ups?)\b/
 
 // The sweep never says urgent: what it reads is high at most medium, and what is put off on purpose is low.
 export function sweepPriority(priority, sentence) {

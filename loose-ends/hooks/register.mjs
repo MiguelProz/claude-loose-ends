@@ -73,18 +73,35 @@ let languageOption = 'auto'
 let lang = 'en'
 let languageReady = false
 
-// Fixes the language once per load: the option when it says es or en, otherwise (auto) the locale variables.
-// Every hook awaits it first, so no text is drawn or sent before it is known; a change of option reloads the module.
+// Fixes the language once per load: the option when it says es or en, otherwise (auto) the locale variables and, when
+// they are all empty (a desktop app on macOS), the system language from `defaults`. Every hook awaits it first, so no
+// text is drawn or sent before it is known; a change of option reloads the module.
 async function resolveLanguage($) {
   if (languageReady) return
   let env = {}
+  let source = 'option'
   if (languageOption !== 'es' && languageOption !== 'en') {
+    source = 'default'
     try {
       env = { LC_ALL: await $.env.get('LC_ALL'), LC_MESSAGES: await $.env.get('LC_MESSAGES'), LANG: await $.env.get('LANG') }
     } catch {}
+    const set = name => typeof env[name] === 'string' && env[name].trim() !== ''
+    if (set('LC_ALL') || set('LC_MESSAGES') || set('LANG')) {
+      source = set('LC_ALL') ? 'LC_ALL' : set('LC_MESSAGES') ? 'LC_MESSAGES' : 'LANG'
+    } else {
+      try {
+        const r = await $.process.run(['defaults', 'read', '-g', 'AppleLocale'], { timeoutMs: 2000 })
+        const out = typeof r?.stdout === 'string' ? r.stdout.trim() : ''
+        if (r?.exitCode === 0 && out !== '') {
+          env.APPLE_LOCALE = out
+          source = 'AppleLocale'
+        }
+      } catch {}
+    }
   }
   lang = pickLanguage(languageOption, env)
   languageReady = true
+  await logDebug($, `loose-ends: language ${lang} (${source === 'default' ? 'default' : `from ${source}`})`)
 }
 
 async function logDebug($, message) {

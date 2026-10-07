@@ -157,6 +157,27 @@ describe('the whole sentence', () => {
     expect(verdict('El login todavía no está resuelto')).toBe(null)
     expect(verdict('Queda pendiente tipar team-drafts')).toBe(null)
   })
+  test('the same checks in English', () => {
+    const done = 'the sentence says it is already done'
+    const underWay = 'the sentence says it is being done'
+    const decision = 'the sentence leaves a decision to the user'
+    expect(sentenceVerdict('Fixed the parser.')).toBe(done)
+    expect(sentenceVerdict('The cache bug is already fixed.')).toBe(done)
+    expect(sentenceVerdict('Resolved, and the tests pass.')).toBe(done)
+    expect(sentenceVerdict('I implemented the helper.')).toBe(done)
+    expect(sentenceVerdict('The parser is not fixed yet.')).toBe(null)
+    expect(sentenceVerdict("The login isn't fixed.")).toBe(null)
+    expect(sentenceVerdict('The login has not been resolved.')).toBe(null)
+    expect(sentenceVerdict('The tests are still to be done.')).toBe(null)
+    expect(sentenceVerdict("I'm launching two agents to fix it.")).toBe(underWay)
+    expect(sentenceVerdict('I am now working on the cache.')).toBe(underWay)
+    expect(sentenceVerdict('This is in progress.')).toBe(underWay)
+    expect(sentenceVerdict("I'll fix it now.")).toBe(underWay)
+    expect(sentenceVerdict('Your call whether to keep it.')).toBe(decision)
+    expect(sentenceVerdict('Using zod is up to you.')).toBe(decision)
+    expect(sentenceVerdict('Let me know if you want the cache tests.')).toBe(decision)
+    expect(sentenceVerdict('The cache tests are missing.')).toBe(null)
+  })
   test('every kind of marker, with or without accents', () => {
     const done = 'the sentence says it is already done'
     const underWay = 'the sentence says it is being done'
@@ -200,6 +221,10 @@ describe('sweep priority', () => {
     expect(sweepPriority('low', null)).toBe('low')
     expect(sweepPriority('high', 'lo dejo para más adelante')).toBe('low')
     expect(sweepPriority('medium', 'queda fuera del plan, fase 5')).toBe('low')
+    expect(sweepPriority('high', 'Left for later: the cache tests.')).toBe('low')
+    expect(sweepPriority('medium', 'That is out of scope, a follow-up.')).toBe('low')
+    expect(sweepPriority('medium', 'Do it separately in another PR.')).toBe('low')
+    expect(sweepPriority('high', 'This breaks the login.')).toBe('medium')
   })
   test('a parsed candidate gets the calibrated priority', () => {
     const reply = JSON.stringify({ new: [{ text: 'Tipar drafts', category: 'bug', priority: 'high', evidence: EVIDENCE_2 }], resolved: [] })
