@@ -924,6 +924,8 @@ export function register(on, options = {}) {
   })
 
   on('turn.complete', async ($, e, next) => {
+    // before any await: a new turn starting meanwhile must not make this turn's candidates look older
+    const since = turnStartedAt
     await resolveLanguage($)
     const r = await next(e)
     if (e.agentId) {
@@ -957,7 +959,7 @@ export function register(on, options = {}) {
           commit = await commitSince($, turnStartedAt)
           if (commit) log = await logSince($, turnStartedAt)
         })
-        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit, { allowNew, log, since: turnStartedAt }), 'the sweep')
+        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit, { allowNew, log, since }), 'the sweep')
       }
     }
     return r

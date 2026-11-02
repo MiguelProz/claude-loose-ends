@@ -63,6 +63,39 @@ describe('a quote must show that specific item done', () => {
     expect(closes([trail], described, [{ id: trail.id, quote: described }])).toEqual([])
   })
 
+  test('a negation anywhere in the clause, a question or a list of pending work is not a closure', () => {
+    const panel = item('p', 'Corregir el panel de ajustes')
+    for (const quote of [
+      'No está del todo corregido el panel de ajustes',
+      'El panel de ajustes no está del todo corregido',
+      'Nada está hecho en el panel de ajustes',
+      '¿Está corregido el panel de ajustes?',
+      'He añadido el panel de ajustes a la lista de pendientes',
+    ]) {
+      expect(closes([panel], quote, [{ id: 'p', quote }])).toEqual([])
+    }
+    const ok = 'Corregido el panel de ajustes: ya no falla'
+    expect(closes([panel], ok, [{ id: 'p', quote: ok }])).toEqual(['p'])
+    const en = item('e', 'Fix the settings panel')
+    for (const quote of ["The settings panel isn't fully fixed", 'Nothing is done on the settings panel', 'Should I mark the settings panel done?']) {
+      expect(closes([en], quote, [{ id: 'e', quote }])).toEqual([])
+    }
+  })
+
+  test('an identifier counts with its underscores, and a version or a date is not one', () => {
+    const fixedProb = 'Fixed: no_speech_prob is now read'
+    expect(closes([STOP], fixedProb, [{ id: STOP.id, quote: fixedProb }])).toEqual([STOP.id])
+    const bump = item('v', 'Bump the library to v0.4.1 before release')
+    const other = 'Fixed the login page in v0.4.1'
+    expect(closes([bump], other, [{ id: 'v', quote: other }])).toEqual([])
+  })
+
+  test('a work-in-progress commit proves nothing', () => {
+    const panel = item('p', 'Corregir el panel de ajustes')
+    const log = 'a1 wip: panel de ajustes a medias'
+    expect(closes([panel], 'corto', [{ id: 'p', quote: 'wip: panel de ajustes a medias' }], { log })).toEqual([])
+  })
+
   test('a short «Corregido.» after the sentence counts as said of it', () => {
     const trail = item('t', 'Pintar el rastro del recorrido con el color del tema')
     const quote = 'El rastro se pinta con el color del tema.'

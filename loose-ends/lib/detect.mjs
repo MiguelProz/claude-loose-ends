@@ -136,7 +136,7 @@ const DECISION = /\b(es decision tuya|decision tuya|decides tu|te lo pregunto|de
 const DEFERRED = /\b(mas adelante|para luego|otro momento|otro dia|en el futuro|fase \d+|fuera del plan|fuera de alcance|fuera del alcance|for later|later on|out of scope|not now|separately|in (a|another|the next) (pr|task|session|phase|pull request)|follow-?ups?)\b/
 
 // Said of noting a loose end, not of doing it: «I logged it as a loose end», «los he dejado apuntados como pendientes».
-const LOGGED = /\b(apuntad[oa]s?|anotad[oa]s?)\b|\b(logged|noted|filed|recorded|flagged|proposed|tracked|added|saved|left|registrad[oa]s?|propuest[oa]s?|dejad[oa]s?|guardad[oa]s?)\b.*\b(loose ends?|cabos?|notebook|cuaderno|pendientes?)\b|\b(save|guardar)\b.*\b(from|desde)\b.*\b(card|tarjeta)\b/
+const LOGGED = /\b(apuntad[oa]s?|anotad[oa]s?)\b|\b(logged|noted|filed|recorded|flagged|proposed|tracked|added|saved|left|registrad[oa]s?|propuest[oa]s?|dejad[oa]s?|guardad[oa]s?|anadid[oa]s?)\b.*\b(loose ends?|cabos?|notebook|cuaderno|pendientes?|pending|backlog)\b|\b(save|guardar)\b.*\b(from|desde)\b.*\b(card|tarjeta)\b/
 // What a closure may say besides DONE; new items keep the narrower list, where these words often describe the code.
 const FINISHED = /\b(hech[oa]s?|terminad[oa]s?|completad[oa]s?|anadid[oa]s?|implementad[oa]s?|eliminad[oa]s?|quitad[oa]s?|fusionad[oa]s?|finished|completed|merged|shipped)\b/
 // Words that say nothing about which loose end a sentence is about.
@@ -145,17 +145,28 @@ const IDENTIFIER = /[a-z0-9]+(?:[._/-][a-z0-9_]+)+|[a-z0-9]+_[a-z0-9_]+/g
 const wordsOf = text => new Set(text.split(/[^a-z0-9]+/).filter(w => w.length >= 4 && !COMMON_WORDS.has(w)))
 const basename = file => (typeof file === 'string' ? plain(file).split(/[\\/]/).pop() : '')
 
+// A closure is stricter than the filter of new items: any negation earlier in the clause undoes it («no está del todo
+// corregido», «isn't fully fixed», «nada está hecho»), and so does a question.
+const CLAUSE_NEGATED = /\b(no|not|never|sin|nunca|nada|ninguno|ninguna|nothing|none|aun|todavia|yet|still|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t|hasn['’]?t|haven['’]?t)\b/
+const saysDone = text => {
+  if (text.endsWith('?')) return false
+  const done = new RegExp(`${DONE.source}|${FINISHED.source}`, 'g')
+  return [...text.matchAll(done)].some(m => !CLAUSE_NEGATED.test(text.slice(0, m.index).split(/[,;:.]/).pop()))
+}
+
 const negationFree = (pattern, text) => [...text.matchAll(new RegExp(pattern.source, 'g'))].some(m => !NEGATED.test(text.slice(Math.max(0, m.index - 20), m.index)))
 
 // The sentence is about this item: two words of its text, or one identifier of its text or its file's name. A closure
 // in another language shares neither and the candidate stays: one click for the person, where a false withdrawal hides
 // it from them.
 function sameSubject(item, text) {
+  // the sentence comes normalized, without underscores
+  const bare = name => name.replace(/_/g, '')
   const said = wordsOf(text)
   const own = plain(item.text ?? '')
-  const names = new Set([...(own.match(IDENTIFIER) ?? []), basename(item.file)].filter(Boolean))
-  const spoken = new Set(text.match(IDENTIFIER) ?? [])
-  if ([...names].some(n => spoken.has(n))) return true
+  const names = [...(own.match(IDENTIFIER) ?? []).flatMap(n => [n, ...n.split('/')]), basename(item.file)].map(bare).filter(n => n.length >= 5 && !/^v?\d/.test(n))
+  const spoken = new Set((text.match(IDENTIFIER) ?? []).map(bare))
+  if (names.some(n => spoken.has(n) || said.has(n))) return true
   return [...wordsOf(own)].filter(w => said.has(w)).length >= 2
 }
 
@@ -164,10 +175,10 @@ function sameSubject(item, text) {
 export function closureVerdict(item, sentence, { commit = false } = {}) {
   const text = plain(sentence)
   if (LOGGED.test(text)) return 'the sentence says it was noted'
-  if (commit && /^(merge|revert)\b/.test(text)) return 'a merge or a revert says nothing of it'
+  if (commit && /^(merge|revert)\b|\b(wip|draft|partial)\b/.test(text)) return 'a merge, a revert or unfinished work says nothing of it'
   if (!commit) {
     if (UNDER_WAY.test(text) || DECISION.test(text) || DEFERRED.test(text)) return 'the sentence leaves it to do'
-    if (!negationFree(DONE, text) && !negationFree(FINISHED, text)) return 'the sentence does not say it is done'
+    if (!saysDone(text)) return 'the sentence does not say it is done'
   }
   if (item.status !== 'doing' && !sameSubject(item, text)) return 'the sentence is about something else'
   return null
