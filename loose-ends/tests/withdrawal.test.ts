@@ -57,6 +57,12 @@ describe('a quote must show that specific item done', () => {
     expect(closes([guard], added, [{ id: guard.id, quote: added }])).toEqual([guard.id])
   })
 
+  test('a true closure with no done word stays as a candidate: one click for the person, where accepting these lets «se verá» through', () => {
+    const trail = item('535d6ddf', 'Pintar el rastro del recorrido con el color del tema en lugar de líneas negras')
+    const described = 'El rastro se pinta con el color del tema, semitransparente y más grueso'
+    expect(closes([trail], described, [{ id: trail.id, quote: described }])).toEqual([])
+  })
+
   test('a short «Corregido.» after the sentence counts as said of it', () => {
     const trail = item('t', 'Pintar el rastro del recorrido con el color del tema')
     const quote = 'El rastro se pinta con el color del tema.'
