@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1 — 2026-11-03
+
+- Candidates no longer vanish by themselves on quotes that prove nothing. In one
+  real repo the sweep had withdrawn all 106, so none ever reached the person.
+- A closure must show that specific loose end done: the sentence says it is done
+  (not negated, not under way, not put off) and shares its subject, two words or
+  a file or identifier. A loose end in progress skips the subject, since the turn
+  was about it.
+- A candidate is not withdrawn in the turn that proposed it.
+- A sentence claimed by several loose ends closes none of them.
+- Saying a loose end was noted or logged never counts, and a merge or revert
+  commit proves nothing.
+- `scripts/withdrawal-replay.mjs` replays the gate over a repo's withdrawn items.
+
 ## 0.5.0 — 2026-10-07
 
 - English and Spanish. The `language` option (`auto`, `es`, `en`; `auto` by

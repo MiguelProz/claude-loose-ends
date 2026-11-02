@@ -96,25 +96,26 @@ describe('sweep reply', () => {
     expect(parseSweepReply(reply, [], ['/Users/m/api'], ANSWER)?.fresh.map(f => f.repo)).toEqual(['/Users/m/api', undefined])
   })
   test('resolved needs a known id and a literal quote; ids collapse; plain ids are dropped', () => {
-    const reply = JSON.stringify({ new: [], resolved: [{ id: 'a1', quote: EVIDENCE }, { id: 'a1', quote: EVIDENCE_2 }, { id: 'zz', quote: EVIDENCE }, { id: 'b2', quote: 'esto no se dijo nunca jamás' }, 'c3'] })
-    const parsed = parseSweepReply(reply, ['a1', 'b2', 'c3'], [], ANSWER)
-    expect(parsed?.resolved).toEqual([{ id: 'a1', quote: EVIDENCE }])
+    const done = 'Corregido: tipar team-drafts'
+    const reply = JSON.stringify({ new: [], resolved: [{ id: 'a1', quote: done }, { id: 'a1', quote: EVIDENCE_2 }, { id: 'zz', quote: done }, { id: 'b2', quote: 'esto no se dijo nunca jamás' }, 'c3'] })
+    const parsed = parseSweepReply(reply, [item(), item({ id: 'b2' }), item({ id: 'c3' })], [], `${ANSWER} ${done}.`)
+    expect(parsed?.resolved).toEqual([{ id: 'a1', quote: done }])
     expect(parsed?.dropped).toBe(1)
   })
   test('a closure may quote a commit of the turn; a new item may not', () => {
     const LOG = 'a3f9c21 fix: comprimir la foto 3 antes de subirla'
     const reply = JSON.stringify({ new: [{ text: 'Nuevo', category: 'bug', evidence: 'comprimir la foto 3 antes de subirla' }], resolved: [{ id: 'a1', quote: 'fix: comprimir la foto 3 antes de subirla' }] })
-    const parsed = parseSweepReply(reply, ['a1'], [], ANSWER, { log: LOG })
+    const parsed = parseSweepReply(reply, [item({ text: 'Comprimir la foto 3 al subirla' })], [], ANSWER, { log: LOG })
     expect(parsed?.resolved).toEqual([{ id: 'a1', quote: 'fix: comprimir la foto 3 antes de subirla' }])
     expect(parsed?.fresh).toEqual([])
-    expect(parseSweepReply(reply, ['a1'], [], ANSWER)?.resolved).toEqual([])
+    expect(parseSweepReply(reply, [item({ text: 'Comprimir la foto 3 al subirla' })], [], ANSWER)?.resolved).toEqual([])
     expect(buildSweepPrompt('es', 'r', [], [], [], [], LOG)).toContain('Commits de este turno:\n- a3f9c21 fix: comprimir la foto 3 antes de subirla\n\nRespuesta del asistente:')
   })
   test('allowNew false keeps only the closures', () => {
-    const reply = JSON.stringify({ new: [{ text: 'Nuevo', category: 'bug', evidence: EVIDENCE }], resolved: [{ id: 'a1', quote: EVIDENCE_2 }] })
-    const parsed = parseSweepReply(reply, ['a1'], [], ANSWER, { allowNew: false })
+    const reply = JSON.stringify({ new: [{ text: 'Nuevo', category: 'bug', evidence: EVIDENCE }], resolved: [{ id: 'a1', quote: 'Corregido: tipar team-drafts' }] })
+    const parsed = parseSweepReply(reply, [item()], [], `${ANSWER} Corregido: tipar team-drafts.`, { allowNew: false })
     expect(parsed?.fresh).toEqual([])
-    expect(parsed?.resolved).toEqual([{ id: 'a1', quote: EVIDENCE_2 }])
+    expect(parsed?.resolved).toEqual([{ id: 'a1', quote: 'Corregido: tipar team-drafts' }])
   })
   test('containsQuote uses the same normalization and minimum', () => {
     expect(containsQuote('Eso sí, **`lo dejo`** _fuera_ del alcance.', 'lo dejo fuera del alcance')).toBe(true)

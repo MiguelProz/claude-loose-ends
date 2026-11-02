@@ -25,10 +25,14 @@ The session's notebook for Claude Code, with Chispa. English and Spanish.
   born, with the sentence in bold, and `Save`, `Not a loose end` or `Edit`.
   What you do not review waits in the Notebook and expires after 7 days. What
   the sweep proposes waits one turn before showing, longer while subagents work
-  (up to 30 minutes). If a later answer, or the subject of a commit of the
-  turn, shows it done, it goes away by itself: the card says "Withdrawn:
-  resolved later" with `Undo`, and `↺` in Closed this week brings it back to
-  review. Every "Not a loose end" teaches the sweep: the last 20 go into its
+  (up to 30 minutes). If a later answer, or the subject of a commit of a later
+  turn, shows that specific loose end done, it goes away by itself: the card
+  says "Withdrawn: resolved later" with `Undo`, and `↺` in Closed this week
+  brings it back to review. The sentence has to say it is done and share its
+  subject (two words, or a file or identifier). It never goes in the turn that
+  proposed it, a sentence claimed by several loose ends closes none, and saying
+  it was noted never counts. A closure in another language shares no words, so
+  that loose end stays for you to dismiss. Every "Not a loose end" teaches the sweep: the last 20 go into its
   prompt.
 - **Closing with proof.** Haiku never closes anything. If an answer shows a
   loose end done, it proposes "Resolved?" with the sentence that proves it and,

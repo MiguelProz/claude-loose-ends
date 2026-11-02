@@ -135,6 +135,44 @@ const DECISION = /\b(es decision tuya|decision tuya|decides tu|te lo pregunto|de
 // Put off on purpose: later, another phase, outside the plan.
 const DEFERRED = /\b(mas adelante|para luego|otro momento|otro dia|en el futuro|fase \d+|fuera del plan|fuera de alcance|fuera del alcance|for later|later on|out of scope|not now|separately|in (a|another|the next) (pr|task|session|phase|pull request)|follow-?ups?)\b/
 
+// Said of noting a loose end, not of doing it: «I logged it as a loose end», «los he dejado apuntados como pendientes».
+const LOGGED = /\b(apuntad[oa]s?|anotad[oa]s?)\b|\b(logged|noted|filed|recorded|flagged|proposed|tracked|added|saved|left|registrad[oa]s?|propuest[oa]s?|dejad[oa]s?|guardad[oa]s?)\b.*\b(loose ends?|cabos?|notebook|cuaderno|pendientes?)\b|\b(save|guardar)\b.*\b(from|desde)\b.*\b(card|tarjeta)\b/
+// What a closure may say besides DONE; new items keep the narrower list, where these words often describe the code.
+const FINISHED = /\b(hech[oa]s?|terminad[oa]s?|completad[oa]s?|anadid[oa]s?|implementad[oa]s?|eliminad[oa]s?|quitad[oa]s?|fusionad[oa]s?|finished|completed|merged|shipped)\b/
+// Words that say nothing about which loose end a sentence is about.
+const COMMON_WORDS = new Set(['after', 'ahora', 'also', 'antes', 'before', 'cada', 'code', 'codigo', 'como', 'cuando', 'desde', 'donde', 'entre', 'esta', 'estas', 'este', 'esto', 'estos', 'from', 'have', 'hacer', 'into', 'only', 'para', 'porque', 'pero', 'sobre', 'tests', 'test', 'than', 'that', 'then', 'this', 'toda', 'todas', 'todo', 'todos', 'when', 'where', 'with'])
+const IDENTIFIER = /[a-z0-9]+(?:[._/-][a-z0-9_]+)+|[a-z0-9]+_[a-z0-9_]+/g
+const wordsOf = text => new Set(text.split(/[^a-z0-9]+/).filter(w => w.length >= 4 && !COMMON_WORDS.has(w)))
+const basename = file => (typeof file === 'string' ? plain(file).split(/[\\/]/).pop() : '')
+
+const negationFree = (pattern, text) => [...text.matchAll(new RegExp(pattern.source, 'g'))].some(m => !NEGATED.test(text.slice(Math.max(0, m.index - 20), m.index)))
+
+// The sentence is about this item: two words of its text, or one identifier of its text or its file's name. A closure
+// in another language shares neither and the candidate stays: one click for the person, where a false withdrawal hides
+// it from them.
+function sameSubject(item, text) {
+  const said = wordsOf(text)
+  const own = plain(item.text ?? '')
+  const names = new Set([...(own.match(IDENTIFIER) ?? []), basename(item.file)].filter(Boolean))
+  const spoken = new Set(text.match(IDENTIFIER) ?? [])
+  if ([...names].some(n => spoken.has(n))) return true
+  return [...wordsOf(own)].filter(w => said.has(w)).length >= 2
+}
+
+// Why this sentence does not show this item done, or null. The subject of a commit is done work by being a commit,
+// but a merge or a revert says nothing of the item. An item in progress skips the subject: the turn was about it.
+export function closureVerdict(item, sentence, { commit = false } = {}) {
+  const text = plain(sentence)
+  if (LOGGED.test(text)) return 'the sentence says it was noted'
+  if (commit && /^(merge|revert)\b/.test(text)) return 'a merge or a revert says nothing of it'
+  if (!commit) {
+    if (UNDER_WAY.test(text) || DECISION.test(text) || DEFERRED.test(text)) return 'the sentence leaves it to do'
+    if (!negationFree(DONE, text) && !negationFree(FINISHED, text)) return 'the sentence does not say it is done'
+  }
+  if (item.status !== 'doing' && !sameSubject(item, text)) return 'the sentence is about something else'
+  return null
+}
+
 // The sweep never says urgent: what it reads is high at most medium, and what is put off on purpose is low.
 export function sweepPriority(priority, sentence) {
   if (typeof sentence === 'string' && DEFERRED.test(plain(sentence))) return 'low'
@@ -145,15 +183,13 @@ export function sweepPriority(priority, sentence) {
 export function sentenceVerdict(sentence) {
   if (typeof sentence !== 'string') return null
   const text = plain(sentence)
-  for (const m of text.matchAll(new RegExp(DONE.source, 'g'))) {
-    if (!NEGATED.test(text.slice(Math.max(0, m.index - 20), m.index))) return 'the sentence says it is already done'
-  }
+  if (negationFree(DONE, text)) return 'the sentence says it is already done'
   if (UNDER_WAY.test(text)) return 'the sentence says it is being done'
   if (DECISION.test(text)) return 'the sentence leaves a decision to the user'
   return null
 }
 
-export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '', { allowNew = true, log = '' } = {}) {
+export function parseSweepReply(text, closable, candidatePaths = [], answer = '', { allowNew = true, log = '' } = {}) {
   const data = firstJsonObject(text)
   if (!data) return null
   const repos = new Set(candidatePaths)
@@ -164,7 +200,7 @@ export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '',
   }
   // a closure may also quote the subject of a commit of the turn
   const commits = normalize(typeof log === 'string' ? log : '')
-  const proven = quote => literal(quote) ?? (typeof quote === 'string' && normalizeEvidence(quote).length >= MIN_EVIDENCE && commits.includes(normalizeEvidence(quote)) ? quote : null)
+  const inCommit = quote => typeof quote === 'string' && normalizeEvidence(quote).length >= MIN_EVIDENCE && commits.includes(normalizeEvidence(quote))
   let notLiteral = 0
   const skipped = []
   const seen = new Set()
@@ -194,17 +230,26 @@ export function parseSweepReply(text, liveIds, candidatePaths = [], answer = '',
     evidence: cleanEvidence(x.evidence).slice(0, 400),
     repo: typeof x.repo === 'string' && repos.has(x.repo) ? x.repo : undefined,
   }))
-  const known = new Set(liveIds)
+  const known = new Map(closable.map(i => [i.id, i]))
   const closed = new Set()
-  const resolved = []
+  const claims = []
   for (const r of Array.isArray(data.resolved) ? data.resolved : []) {
     if (!r || typeof r.id !== 'string' || !known.has(r.id) || closed.has(r.id)) continue
-    if (!proven(r.quote)) {
+    const said = literal(r.quote)
+    if (!said && !inCommit(r.quote)) {
       notLiteral++
       continue
     }
     closed.add(r.id)
-    resolved.push({ id: r.id, quote: cleanEvidence(r.quote).slice(0, 400) })
+    claims.push({ item: known.get(r.id), quote: r.quote, commit: !said, sentence: said ? sentenceAround(answer, r.quote) ?? said : normalizeEvidence(r.quote) })
+  }
+  // one sentence that closes several items names none of them: «Están hechas las 15 tareas»
+  const shared = sentence => claims.filter(c => c.sentence === sentence).length > 1
+  const resolved = []
+  for (const { item, quote, commit, sentence } of claims) {
+    const reason = shared(sentence) ? 'one sentence cannot prove two items' : closureVerdict(item, sentence, { commit })
+    if (reason) skipped.push({ text: item.text, reason: `not a closure: ${reason}` })
+    else resolved.push({ id: item.id, quote: cleanEvidence(quote).slice(0, 400) })
   }
   return { fresh, resolved, dropped: notLiteral, skipped }
 }

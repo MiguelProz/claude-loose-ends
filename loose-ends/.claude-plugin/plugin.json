@@ -1,6 +1,6 @@
 {
   "name": "loose-ends",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Proposes the loose ends Claude leaves undone and lets you decide which to keep; keeps them in refs/loose-ends without touching your branches, and Chispa flags what needs your attention. English and Spanish.",
   "author": { "name": "Miguel Ángel Pérez García" },
   "userConfig": {

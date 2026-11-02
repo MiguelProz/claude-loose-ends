@@ -10,7 +10,8 @@ const own = JSON.stringify({ version: 1, items: [{ id: 'a1', text: 'Cabo de la s
 const EVIDENCE = 'lo dejo para otro día'
 // long enough to be swept (500+) and carrying the phrase the fake Haiku quotes as evidence
 const EVIDENCE_2 = 'y el test lo omito por ahora'
-const longAnswer = (fill: string) => `${fill.repeat(500)} ${EVIDENCE}. ${EVIDENCE_2}`
+const CLOSED = 'Corregido el cabo de la sesión'
+const longAnswer = (fill: string) => `${fill.repeat(500)}. ${CLOSED}. Esta frase separa lo cerrado de lo que queda. ${EVIDENCE}. ${EVIDENCE_2}`
 const answered = (text: string) => ({ value: { isAnswered: true, text, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
 const tools = (on: any) => on('tool.call', () => ({ result: {} }))
 const turns = (on: any) => {
@@ -87,7 +88,7 @@ test('the session repo is refreshed after each turn', async ($, on) => {
 test('the sweep files a new item in a repo touched this turn when Haiku names it', async ($, on) => {
   const w = world(on, {}, { repos: REPOS, branches: { '/other': 'feat/o' }, refs: { [ROOT]: own } })
   let asked = ''
-  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Tipar el parser de fechas","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"y el test lo omito por ahora"}]}') })
+  on('model.complete', ($: any, e: any) => { asked = e.prompt; return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Tipar el parser de fechas","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"Corregido el cabo de la sesión"}]}') })
   tools(on)
   turns(on)
   await w.start($)
@@ -98,7 +99,7 @@ test('the sweep files a new item in a repo touched this turn when Haiku names it
   expect(asked).toContain('Repos candidatos:\n- proj: /proj\n- other: /other')
   expect(w.savedAt(OTHER).map((i: any) => [i.text, i.branch, i.source])).toEqual([['Cabo para el otro', 'feat/o', 'sweep']])
   expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Tipar el parser de fechas', 'candidate']])
-  expect(w.saved()[0].proposal.quote).toBe('y el test lo omito por ahora')
+  expect(w.saved()[0].proposal.quote).toBe(CLOSED)
 })
 
 test('a candidate the sweep cannot file in one repo does not stop the rest of the sweep', async ($, on) => {
@@ -107,7 +108,7 @@ test('a candidate the sweep cannot file in one repo does not stop the rest of th
   on('model.complete', () => {
     // the other repo goes away while Haiku answers: every git call there fails
     missing.push(OTHER)
-    return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Tipar el parser de fechas","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"y el test lo omito por ahora"}]}')
+    return answered('{"new":[{"text":"Cabo para el otro","category":"deuda","priority":"low","evidence":"lo dejo para otro día","repo":"/other"},{"text":"Tipar el parser de fechas","category":"deuda","priority":"low","evidence":"y el test lo omito por ahora"}],"resolved":[{"id":"a1","quote":"Corregido el cabo de la sesión"}]}')
   })
   tools(on)
   turns(on)
@@ -117,7 +118,7 @@ test('a candidate the sweep cannot file in one repo does not stop the rest of th
   await endTurn($)
   await w.clock.settle()
   expect(w.saved().map((i: any) => [i.text, i.status])).toEqual([['Cabo de la sesión', 'open'], ['Tipar el parser de fechas', 'candidate']])
-  expect(w.saved()[0].proposal.quote).toBe('y el test lo omito por ahora')
+  expect(w.saved()[0].proposal.quote).toBe(CLOSED)
   expect(w.logs.some(l => l.includes('/other') && l.includes('failed'))).toBe(true)
 })
 

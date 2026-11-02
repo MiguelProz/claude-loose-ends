@@ -3,7 +3,7 @@ import {
   blobArgs, commitArgs, firstLine, hasOrigin, lastCommitArgs, turnLogArgs, mergeItems, pushArgs, sameItems, shaArgs, syncSetArgs, trackArgs, treeInput, updateArgs,
 } from '../lib/refstore.mjs'
 import {
-  LEGACY_FILE, canonicalCategory, addManual, candidates, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
+  LEGACY_FILE, canonicalCategory, addManual, candidates, closableIn, closedRecently, confirmClose, counts, dismiss, editText, expireCandidates, isStale, keepOpen, live,
   markDone, nextItem, parseItems, propose, proposeClose, prune, reject, rejectedTexts, reopen, restore, save, serializeItems, setPriority, start, suggestable, topUrgent, touch, recap, snapshot,
   heldCandidates, release, unwithdraw, withdraw,
 } from '../lib/items.mjs'
@@ -575,11 +575,11 @@ function trackRepos($, e) {
 // Haiku reads the answer: new candidates only from long answers and only when Claude noted nothing by hand; in any
 // answer, closures for the live items and the candidates still waiting, which a later answer often shows done. What
 // the sweep proposes is held back one turn: the next sweep withdraws it if it was done meanwhile, or shows it.
-async function sweep($, answer, touchedNow, commit, { allowNew, log = '' }) {
+async function sweep($, answer, touchedNow, commit, { allowNew, log = '', since = null }) {
   const held = heldCandidates(items).map(i => i.id)
   const resolvedIds = new Set()
   try {
-    await sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, resolvedIds)
+    await sweepAnswer($, answer, touchedNow, commit, { allowNew, log, since }, resolvedIds)
   } finally {
     await releaseHeld($, held.filter(id => !resolvedIds.has(id)))
   }
@@ -598,7 +598,7 @@ async function releaseHeld($, ids) {
   await guarded($, 'show the sweep candidates', () => mutate($, list => release(list, ready, now)))
 }
 
-async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, resolvedIds) {
+async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log, since }, resolvedIds) {
   const others = (await touchedNow).filter(repo => repo !== sessionRepo)
   if (!sessionRepo && !others.length) return
   const repos = others.length ? candidateRepos(sessionRepo, others) : []
@@ -615,7 +615,7 @@ async function sweepAnswer($, answer, touchedNow, commit, { allowNew, log }, res
     await logDebug($, `loose-ends: sweep skipped (${r.reason})`)
     return
   }
-  const parsed = parseSweepReply(r.text, [...open, ...waiting].map(i => i.id), repos, answer, { allowNew, log })
+  const parsed = parseSweepReply(r.text, closableIn([...open, ...waiting], since), repos, answer, { allowNew, log })
   if (!parsed) {
     await logDebug($, 'loose-ends: the sweep returned invalid JSON')
     return
@@ -957,7 +957,7 @@ export function register(on, options = {}) {
           commit = await commitSince($, turnStartedAt)
           if (commit) log = await logSince($, turnStartedAt)
         })
-        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit, { allowNew, log }), 'the sweep')
+        background($, sweep($, e.answer, touchChain.then(() => [...set]), commit, { allowNew, log, since: turnStartedAt }), 'the sweep')
       }
     }
     return r

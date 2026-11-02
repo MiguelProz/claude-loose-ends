@@ -163,6 +163,10 @@ const priorityOf = item => (Object.hasOwn(RANK, item.priority) ? item.priority :
 const byRank = (a, b) => RANK[priorityOf(a)] - RANK[priorityOf(b)]
 const byPriority = (a, b) => byRank(a, b) || created(a) - created(b)
 
+// What the sweep of a turn may close: not a candidate born in that turn, which the turn's own answer cannot have resolved
+// after noting it. Without a known start, no candidate.
+export const closableIn = (list, since) => list.filter(i => i.status !== 'candidate' || (since != null && created(i) < msOf(since)))
+
 // What waits for the person; a candidate the sweep holds back a turn is not shown yet.
 export const candidates = items => items.filter(i => i.status === 'candidate' && !i.held).sort((a, b) => created(a) - created(b))
 export const heldCandidates = items => items.filter(i => i.status === 'candidate' && i.held).sort((a, b) => created(a) - created(b))

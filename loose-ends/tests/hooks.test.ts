@@ -9,7 +9,9 @@ const it = (id: string, text: string, over = {}) => ({ id, text, category: 'deud
 const blob = (...items: any[]) => JSON.stringify({ version: 2, items })
 const EVIDENCE = 'lo dejo para otro día'
 const EVIDENCE_2 = 'y el test lo omito por ahora'
-const longAnswer = () => `${'y'.repeat(500)} ${EVIDENCE}. ${EVIDENCE_2}`
+const CLOSED_A = 'Corregido: tipar drafts'
+const CLOSED_C = 'Corregido: comprimir la foto 3'
+const longAnswer = () => `${'y'.repeat(500)}. ${CLOSED_A}. ${CLOSED_C}. Esta frase separa lo cerrado de lo que queda. ${EVIDENCE}. ${EVIDENCE_2}`
 const answered = (text: string) => ({ value: { isAnswered: true, text, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
 // the engine's own drawing: a Text with the message's text, so a test sees what the mod handed it
 const drawEngine = (on: any) => on('ui.render', ($: any, e: any) => ({ type: 'Text', children: [e.props?.text ?? 'engine'] }))
@@ -66,7 +68,7 @@ test('the sweep proposes candidates and closures, and closes nothing by itself',
   let asked = ''
   on('model.complete', ($: any, e: any) => {
     asked = e.prompt
-    return answered(`{"new":[{"text":"Comprimir la foto 3","category":"mejora","priority":"low","evidence":"${EVIDENCE}"}],"resolved":[{"id":"a1","quote":"${EVIDENCE_2}"}]}`)
+    return answered(`{"new":[{"text":"Comprimir la foto 3","category":"mejora","priority":"low","evidence":"${EVIDENCE}"}],"resolved":[{"id":"a1","quote":"${CLOSED_A}"}]}`)
   })
   turns(on)
   await w.start($)
@@ -75,21 +77,21 @@ test('the sweep proposes candidates and closures, and closes nothing by itself',
   expect(asked).toContain('a1: Tipar drafts')
   expect(asked).toContain('- w1: Candidato que espera')
   expect(asked).toContain('Ejemplos que el usuario rechazó (no propongas nada parecido):\n- Comprobar el CI')
-  expect(find(w, 'a1')).toMatchObject({ status: 'open', proposal: { quote: EVIDENCE_2 } })
+  expect(find(w, 'a1')).toMatchObject({ status: 'open', proposal: { quote: CLOSED_A } })
   expect(w.saved().find((i: any) => i.text === 'Comprimir la foto 3')).toMatchObject({ status: 'candidate', source: 'sweep', category: 'mejora' })
 })
 
 test('a waiting candidate a later answer shows done is withdrawn by itself; its card says so and Deshacer brings it back', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: withCandidate() }, head: 'a3f9c21' })
   drawEngine(on)
-  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"c1","quote":"${EVIDENCE_2}"}]}`))
+  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"c1","quote":"${CLOSED_C}"}]}`))
   turns(on)
   await w.start($)
   const msg = await message($, `Eso sí, ${EVIDENCE}.`)
   await $.turn.start({ text: 'hola', turnId: 't' })
-  await endTurn($, `corto: ${EVIDENCE_2}`)
+  await endTurn($, `corto: ${CLOSED_C}`)
   await w.clock.settle()
-  expect(find(w, 'c1')).toMatchObject({ status: 'expired', withdrawn: true, proof: { quote: EVIDENCE_2, commit: 'a3f9c21' } })
+  expect(find(w, 'c1')).toMatchObject({ status: 'expired', withdrawn: true, proof: { quote: CLOSED_C, commit: 'a3f9c21' } })
   await msg.redraw()
   expect(await msg.find({ type: 'Text', text: 'Retirado: resuelto después · a3f9c21' })).toBeDefined()
   await msg.press({ key: 'tri-undo-c1' })
@@ -134,12 +136,13 @@ test('a sweep candidate is held one turn: no card, no count; the next sweep show
 
 test('a held candidate the next answer shows done is withdrawn without a card', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(it('h1', 'Comprimir la foto 3', { status: 'candidate', held: true, evidence: EVIDENCE })) } })
-  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"h1","quote":"${EVIDENCE_2}"}]}`))
+  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"h1","quote":"${CLOSED_C}"}]}`))
   turns(on)
   await w.start($)
   // a new session shows what an earlier one held: put it back on hold for this test
   w.setRef(ROOT, blob(it('h1', 'Comprimir la foto 3', { status: 'candidate', held: true, evidence: EVIDENCE })))
-  await endTurn($, `corto: ${EVIDENCE_2}`)
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  await endTurn($, `corto: ${CLOSED_C}`)
   await w.clock.settle()
   expect(find(w, 'h1')).toMatchObject({ status: 'expired', withdrawn: true })
 })
@@ -190,13 +193,13 @@ test('a turn where Claude noted a loose end by hand brings no new items from the
 
 test('the last commit made since the turn started goes into the proposal, whatever the command was', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Tipar drafts')) }, head: 'a3f9c21' })
-  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"a1","quote":"${EVIDENCE_2}"}]}`))
+  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"a1","quote":"${CLOSED_A}"}]}`))
   turns(on)
   await w.start($)
   await $.turn.start({ text: 'hola', turnId: 't' })
   await endTurn($)
   await w.clock.settle()
-  expect(find(w, 'a1').proposal).toMatchObject({ quote: EVIDENCE_2, commit: 'a3f9c21' })
+  expect(find(w, 'a1').proposal).toMatchObject({ quote: CLOSED_A, commit: 'a3f9c21' })
   expect(w.runs.some(a => a.includes('--since=2026-10-04T10:00:00.000Z'))).toBe(true)
 })
 
@@ -215,13 +218,13 @@ test('a waiting candidate a commit of the turn resolves is withdrawn with that c
 
 test('a turn without a commit leaves the proposal without one', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Tipar drafts')) }, head: 'a3f9c21', headAt: '2026-10-04T09:00:00.000Z' })
-  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"a1","quote":"${EVIDENCE_2}"}]}`))
+  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"a1","quote":"${CLOSED_A}"}]}`))
   turns(on)
   await w.start($)
   await $.turn.start({ text: 'hola', turnId: 't' })
   await endTurn($)
   await w.clock.settle()
-  expect(find(w, 'a1').proposal.quote).toBe(EVIDENCE_2)
+  expect(find(w, 'a1').proposal.quote).toBe(CLOSED_A)
   expect(find(w, 'a1').proposal.commit).toBeUndefined()
 })
 
@@ -230,7 +233,7 @@ test('short answers bring no new items, but an item in progress is still checked
   let calls = 0
   on('model.complete', () => {
     calls++
-    return answered(`{"new":[{"text":"Nuevo cabo","category":"bug","evidence":"${EVIDENCE}"}],"resolved":[{"id":"a1","quote":"${EVIDENCE}"}]}`)
+    return answered(`{"new":[{"text":"Nuevo cabo","category":"bug","evidence":"${EVIDENCE}"}],"resolved":[{"id":"a1","quote":"${CLOSED_A}"}]}`)
   })
   turns(on)
   await w.start($)
@@ -238,11 +241,11 @@ test('short answers bring no new items, but an item in progress is still checked
   await w.clock.settle()
   expect(calls).toBe(0)
   w.setRef(ROOT, blob(it('a1', 'Tipar drafts', { status: 'doing' })))
-  await endTurn($, `corto: ${EVIDENCE}`, 't2')
+  await endTurn($, `corto: ${CLOSED_A}`, 't2')
   await w.clock.settle()
   expect(calls).toBe(1)
   expect(w.saved().map((i: any) => i.id)).toEqual(['a1'])
-  expect(find(w, 'a1')).toMatchObject({ status: 'doing', proposal: { quote: EVIDENCE } })
+  expect(find(w, 'a1')).toMatchObject({ status: 'doing', proposal: { quote: CLOSED_A } })
 })
 
 test('only an answered turn is swept; a broken reply changes nothing', async ($, on) => {
@@ -278,7 +281,7 @@ test('the sweep never touches an item the person closed meanwhile', async ($, on
   const w = world(on, {}, { refs: { [ROOT]: blob(it('a1', 'Tipar drafts')) } })
   on('model.complete', () => {
     w.setRef(ROOT, blob(it('a1', 'Tipar drafts', { status: 'dismissed', closedAt: '2026-10-04T10:00:01.000Z', updatedAt: '2026-10-04T10:00:01.000Z' })))
-    return answered(`{"new":[],"resolved":[{"id":"a1","quote":"${EVIDENCE_2}"}]}`)
+    return answered(`{"new":[],"resolved":[{"id":"a1","quote":"${CLOSED_A}"}]}`)
   })
   turns(on)
   await w.start($)
@@ -443,7 +446,7 @@ test('Hacer after a card answer makes the card forget it, so its Deshacer cannot
 test('a closure the sweep proposes makes the card forget its answer', async ($, on) => {
   const w = world(on, {}, { refs: { [ROOT]: withCandidate() } })
   drawEngine(on)
-  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"c1","quote":"${EVIDENCE_2}"}]}`))
+  on('model.complete', () => answered(`{"new":[],"resolved":[{"id":"c1","quote":"${CLOSED_C}"}]}`))
   turns(on)
   await w.start($)
   const msg = await message($, `Eso sí, ${EVIDENCE}.`)
@@ -453,7 +456,7 @@ test('a closure the sweep proposes makes the card forget its answer', async ($, 
   expect(await msg.find({ key: 'tri-undo-c1' })).toBeDefined()
   await endTurn($)
   await w.clock.settle()
-  expect(find(w, 'c1').proposal).toMatchObject({ quote: EVIDENCE_2 })
+  expect(find(w, 'c1').proposal).toMatchObject({ quote: CLOSED_C })
   await msg.redraw()
   expect(await msg.find({ key: 'tri-undo-c1' })).toBeUndefined()
   await msg.unmount()
@@ -756,4 +759,53 @@ test('starting a session twice does not stack the refresh timer', async ($, on) 
   w.state.invalidations = 0
   await w.clock.advance(60000)
   expect(w.state.invalidations).toBe(1)
+})
+
+test('a candidate noted this turn is not withdrawn by the sweep of that turn: the band and the Notebook show it', async ($, on) => {
+  const w = world(on)
+  drawEngine(on)
+  const quote = 'Corregido: el rastro se pinta con el color del tema.'
+  on('model.complete', ($: any, e: any) => {
+    const id = /- (\S+): Pintar el rastro/.exec(e.prompt)?.[1]
+    return answered(JSON.stringify({ new: [], resolved: [{ id, quote }] }))
+  })
+  turns(on)
+  await w.start($)
+  await $.turn.start({ text: 'hola', turnId: 't' })
+  await $.tool.call({ tool: TOOL, text: 'Pintar el rastro con el color del tema', category: 'bug', priority: 'medium' })
+  await endTurn($, quote)
+  await w.clock.settle()
+  const noted = w.saved().find((i: any) => i.text === 'Pintar el rastro con el color del tema')
+  expect(noted).toMatchObject({ status: 'candidate' })
+  expect(noted.withdrawn).toBeUndefined()
+  const desk = await band($)
+  expect(await desk.find({ key: 'band-act' })).toBeDefined()
+  const term = await band($, 'terminal')
+  expect(await term.find({ key: 'open-pane' })).toBeDefined()
+  const ui = await pane($)
+  expect(await ui.find({ key: `save-${noted.id}` })).toBeDefined()
+  await desk.unmount()
+  await term.unmount()
+  await ui.unmount()
+})
+
+test('the same candidate in a later turn, with a sentence that shows it done, goes away', async ($, on) => {
+  const w = world(on)
+  drawEngine(on)
+  const quote = 'Corregido: el rastro se pinta con el color del tema.'
+  on('model.complete', ($: any, e: any) => {
+    const id = /- (\S+): Pintar el rastro/.exec(e.prompt)?.[1]
+    return answered(JSON.stringify({ new: [], resolved: [{ id, quote }] }))
+  })
+  turns(on)
+  await w.start($)
+  await $.turn.start({ text: 'hola', turnId: 't1' })
+  await $.tool.call({ tool: TOOL, text: 'Pintar el rastro con el color del tema', category: 'bug', priority: 'medium' })
+  await endTurn($, 'Lo dejo apuntado.', 't1')
+  await w.clock.settle()
+  await w.clock.advance(1000)
+  await $.turn.start({ text: 'arréglalo', turnId: 't2' })
+  await endTurn($, quote, 't2')
+  await w.clock.settle()
+  expect(w.saved().find((i: any) => i.text === 'Pintar el rastro con el color del tema')).toMatchObject({ status: 'expired', withdrawn: true, proof: { quote } })
 })
